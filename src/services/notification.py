@@ -42,7 +42,8 @@ class NotificationService:
             try:
                 await self.bot.send_message(
                     chat_id=user_id,
-                    text=f"Новое сообщение в чате '{spot_name}' от @{sender.username}: {message_text[:100]}...",
+                    text=f"Новое сообщение в чате '{spot_name}' от @{sender.username}: "
+                    "{message_text[:100]}...",
                 )
             except Exception as e:
                 logging.error(

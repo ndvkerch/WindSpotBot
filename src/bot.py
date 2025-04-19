@@ -37,7 +37,8 @@ async def main():
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
                 if not chat_member.can_manage_topics:
                     await message.answer(
-                        "Бот не имеет прав для создания тем. Дайте права администратора с 'Управление темами'."
+                        "Бот не имеет прав для создания тем. Дайте права "
+                        "администратора с 'Управление темами'."
                     )
                     return
                 spot_name = (
@@ -71,16 +72,19 @@ async def main():
                 command_args = parts[1].rsplit(maxsplit=1)
                 if len(command_args) < 2:
                     await message.answer(
-                        "Укажите название спота и тип события (checkin, message, weather)"
+                        "Укажите название спота и тип события (checkin, "
+                        "message, weather)"
                     )
                     return
                 spot_name, event_type = command_args[0], command_args[1]
                 logger.info(
-                    f"Обработка подписки: spot_name='{spot_name}', event_type='{event_type}'"
+                    f"Обработка подписки: spot_name='{spot_name}', "
+                    "event_type='{event_type}'"
                 )
                 if event_type not in ["checkin", "message", "weather"]:
                     await message.answer(
-                        "Неверный тип события. Допустимые значения: checkin, message, weather"
+                        "Неверный тип события. Допустимые значения: "
+                        "checkin, message, weather"
                     )
                     return
                 await subscription_repo.create(
@@ -144,7 +148,8 @@ async def main():
                 )
                 if message_id:
                     await message.answer(
-                        f"Сообщение отправлено в тему '{spot_name}', message_id: {message_id}"
+                        f"Сообщение отправлено в тему '{spot_name}', "
+                        "message_id: {message_id}"
                     )
                 else:
                     await message.answer(f"Ошибка при отправке в тему '{spot_name}'")

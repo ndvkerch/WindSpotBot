@@ -45,7 +45,8 @@ class ChatService:
                 spot_name, text, user
             )
             logging.info(
-                f"Сообщение отправлено в тему '{spot_name}', message_id: {message.message_id}"
+                f"Сообщение отправлено в тему '{spot_name}', "
+                "message_id: {message.message_id}"
             )
             return message.message_id
         except Exception as e:

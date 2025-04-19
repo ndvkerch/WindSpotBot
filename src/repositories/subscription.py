@@ -13,7 +13,8 @@ class SubscriptionRepository:
     async def create(self, user_id: int, spot_name: str, event_type: str) -> None:
         """Создание подписки."""
         async with self.db.execute(
-            "INSERT INTO subscriptions (user_id, spot_name, event_type, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO subscriptions (user_id, spot_name, "
+            "event_type, created_at) VALUES (?, ?, ?, ?)",
             (user_id, spot_name, event_type, datetime.utcnow().isoformat()),
         ):
             await self.db.commit()
@@ -21,7 +22,8 @@ class SubscriptionRepository:
     async def get_by_user(self, user_id: int) -> List[Subscription]:
         """Получение подписок пользователя."""
         async with self.db.execute(
-            "SELECT user_id, spot_name, event_type, created_at FROM subscriptions WHERE user_id = ?",
+            "SELECT user_id, spot_name, event_type, created_at "
+            "FROM subscriptions WHERE user_id = ?",
             (user_id,),
         ) as cursor:
             rows = await cursor.fetchall()
