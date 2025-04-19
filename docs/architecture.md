@@ -8,8 +8,8 @@
   - `CheckinService`: Управление чек-инами.
   - `SpotService`: Поиск и кэширование спотов.
   - `NotificationService`: Отправка пуш-уведомлений подписчикам.
-  - `ChatService`: Отправка и получение сообщений в темах спотов.
-  - `TopicService`: Создание и управление темами.
+  - `ChatService`: Отправка и получение сообщений в темах спотов, создание тем.
+  - `TopicService`: Управление темами.
   - `RatingService`: Оценка спотов.
   - `WeatherService`: Получение погоды.
   - `SchedulerService`: Планировщик задач.
@@ -24,14 +24,12 @@
 - `config/`: Конфигурация (`config.py`, `topics.py`).
 
 ## Схема взаимодействия
-Handlers -> Services -> Repositories -> SQLite
-- Handlers обрабатывают команды и вызывают сервисы.
-- Сервисы содержат бизнес-логику и используют репозитории.
-- Репозитории выполняют SQL-запросы к SQLite.
+```
+Handlers -> Services -> Repositories -> SQLite (data/database.db)
+```
 
 ## Чат спотов
 - Telegram Topics в @WindSpotChat.
-- Каждая тема соответствует споту.
 - `ChatService`: Отправка/получение сообщений, создание тем при первом сообщении.
 - `NotificationService`: Пуши подписчикам (чек-ины, сообщения, погода).
 - Хранилище: `spot_topics`, `subscriptions` в `data/database.db`.
