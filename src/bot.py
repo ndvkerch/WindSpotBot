@@ -1,6 +1,6 @@
 import logging
 from aiogram import Bot, Dispatcher
-from config import settings
+from src.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

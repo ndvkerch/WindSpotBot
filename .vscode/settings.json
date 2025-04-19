@@ -1,0 +1,11 @@
+{
+    "python.formatting.provider": "black",
+    "editor.formatOnSave": true,
+    // Для Windows:
+    "python.formatting.blackPath": "venv/Scripts/black.exe",
+    // Для Linux/macOS:
+    // "python.formatting.blackPath": "venv/bin/black"
+    "files.insertFinalNewline": true,
+    "editor.defaultFoldingRangeProvider": "ms-python.black-formatter"
+  }
+  

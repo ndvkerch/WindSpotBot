@@ -1,5 +1,6 @@
 from typing import Dict
 
+
 class TopicConfig:
     """Конфигурация тем для спотов."""
     SPOT_TOPICS: Dict[str, int] = {
