@@ -1,6 +1,6 @@
 import aiosqlite
 from typing import List
-from models.subscription import Subscription
+from src.models.subscription import Subscription
 from datetime import datetime
 
 
