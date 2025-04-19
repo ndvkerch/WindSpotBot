@@ -28,7 +28,8 @@ Handlers -> Services -> Repositories -> SQLite
 - Репозитории выполняют SQL-запросы к SQLite.
 
 ## Чат спотов
-- Используются Telegram Topics вместо хэштегов.
+- Используются Telegram Topics в @WindSpotChat вместо хэштегов.
 - Каждая тема соответствует споту (например, «Должанка»).
 - Уведомления отправляются в тему с помощью `message_thread_id`.
-- Хранилище: `config/topics.py` или таблица `spot_topics` в БД.
+- Хранилище: Таблица `spot_topics` в SQLite или `config/topics.py`.
+- @WindSpotRU используется для технической поддержки.
