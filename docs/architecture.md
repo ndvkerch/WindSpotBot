@@ -7,8 +7,9 @@
 - `services/`: Бизнес-логика:
   - `CheckinService`: Управление чек-инами.
   - `SpotService`: Поиск и кэширование спотов.
-  - `NotificationService`: Отправка уведомлений в темы спотов.
-  - `ChatService`: Получение сообщений из тем спотов.
+  - `NotificationService`: Отправка пуш-уведомлений подписчикам.
+  - `ChatService`: Отправка и получение сообщений в темах спотов.
+  - `TopicService`: Создание и управление темами.
   - `RatingService`: Оценка спотов.
   - `WeatherService`: Получение погоды.
   - `SchedulerService`: Планировщик задач.
@@ -17,7 +18,8 @@
   - `UserRepository`: Пользователи.
   - `SpotRepository`: Споты.
   - `CheckinRepository`: Чек-ины.
-- `models/`: Pydantic-модели (`User`, `Spot`, `Checkin`).
+  - `SubscriptionRepository`: Подписки.
+- `models/`: Pydantic-модели (`User`, `Spot`, `Checkin`, `Subscription`).
 - `keyboards/`: Клавиатуры (`main.py`).
 - `config/`: Конфигурация (`config.py`, `topics.py`).
 
@@ -28,8 +30,9 @@ Handlers -> Services -> Repositories -> SQLite
 - Репозитории выполняют SQL-запросы к SQLite.
 
 ## Чат спотов
-- Используются Telegram Topics в @WindSpotChat вместо хэштегов.
-- Каждая тема соответствует споту (например, «Должанка»).
-- Уведомления отправляются в тему с помощью `message_thread_id`.
-- Хранилище: Таблица `spot_topics` в SQLite или `config/topics.py`.
-- @WindSpotRU используется для технической поддержки.
+- Telegram Topics в @WindSpotChat.
+- Каждая тема соответствует споту.
+- `ChatService`: Отправка/получение сообщений, создание тем при первом сообщении.
+- `NotificationService`: Пуши подписчикам (чек-ины, сообщения, погода).
+- Хранилище: `spot_topics`, `subscriptions` в `data/database.db`.
+- @WindSpotRU: Техническая поддержка.
