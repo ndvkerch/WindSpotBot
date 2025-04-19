@@ -3,7 +3,7 @@ import logging
 import aiosqlite
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from src.config import settings
+from src.config.config import settings
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
 from src.services.chat import ChatService
@@ -28,6 +28,29 @@ async def main():
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
+
+        # Временно тестовая функция потом удалим
+        @dp.message(Command(commands=["test_chat"]))
+        async def cmd_test_chat(message: types.Message):
+            """Тест отправки сообщения в тему."""
+            try:
+                spot_name = (
+                    message.text.split(maxsplit=1)[1]
+                    if len(message.text.split()) > 1
+                    else "Тест"
+                )
+                message_id = await chat_service.send_message_to_spot(
+                    spot_name, "Тестовое сообщение", message.from_user.id
+                )
+                if message_id:
+                    await message.answer(
+                        f"Сообщение отправлено в тему '{spot_name}', message_id: {message_id}"
+                    )
+                else:
+                    await message.answer(f"Ошибка при отправке в тему '{spot_name}'")
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_test_chat: {e}")
+                await message.answer(f"Не удалось отправить сообщение: {e}")
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))

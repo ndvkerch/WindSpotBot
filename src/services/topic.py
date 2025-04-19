@@ -1,7 +1,7 @@
 import aiosqlite
 import logging
 from aiogram import Bot
-from config import settings
+from src.config.config import settings
 from typing import Optional
 
 
@@ -16,7 +16,9 @@ class TopicService:
         """Создание темы для спота и сохранение message_thread_id в БД."""
         try:
             topic = await self.bot.create_forum_topic(
-                chat_id=settings.CHAT_ID, name=spot_name, icon_custom_emoji_id=None
+                chat_id=settings.CHAT_ID,
+                name=spot_name,
+                icon_custom_emoji_id=None,  # Можно добавить эмодзи для темы
             )
             thread_id = topic.message_thread_id
             if thread_id:

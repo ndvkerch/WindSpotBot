@@ -2,7 +2,7 @@ from aiogram import Bot
 from src.models.user import User
 from src.services.topic import TopicService
 from src.repositories.subscription import SubscriptionRepository
-from src.config import settings
+from src.config.config import settings
 import logging
 
 

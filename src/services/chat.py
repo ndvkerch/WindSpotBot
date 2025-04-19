@@ -1,7 +1,7 @@
 from aiogram import Bot
 from typing import List, Optional
 from src.services.topic import TopicService
-from src.config import settings
+from src.config.config import settings
 import logging
 
 
