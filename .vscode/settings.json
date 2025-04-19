@@ -6,6 +6,7 @@
     // Для Linux/macOS:
     // "python.formatting.blackPath": "venv/bin/black"
     "files.insertFinalNewline": true,
-    "editor.defaultFoldingRangeProvider": "ms-python.black-formatter"
+    "editor.defaultFoldingRangeProvider": "ms-python.black-formatter",
+    "files.eol": "\n"
   }
   

@@ -3,6 +3,7 @@ __pycache__/
 .env
 bot.log
 data/database.db
+.vscode/
 
 
 
