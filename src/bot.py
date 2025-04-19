@@ -24,33 +24,10 @@ async def main():
         # Инициализация сервисов
         subscription_repo = SubscriptionRepository(db)
         topic_service = TopicService(bot, db)
-        chat_service = ChatService(bot, topic_service)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
-
-        # Временно тестовая функция потом удалим
-        @dp.message(Command(commands=["test_chat"]))
-        async def cmd_test_chat(message: types.Message):
-            """Тест отправки сообщения в тему."""
-            try:
-                spot_name = (
-                    message.text.split(maxsplit=1)[1]
-                    if len(message.text.split()) > 1
-                    else "Тест"
-                )
-                message_id = await chat_service.send_message_to_spot(
-                    spot_name, "Тестовое сообщение", message.from_user.id
-                )
-                if message_id:
-                    await message.answer(
-                        f"Сообщение отправлено в тему '{spot_name}', message_id: {message_id}"
-                    )
-                else:
-                    await message.answer(f"Ошибка при отправке в тему '{spot_name}'")
-            except Exception as e:
-                logger.error(f"Ошибка в cmd_test_chat: {e}")
-                await message.answer(f"Не удалось отправить сообщение: {e}")
+        chat_service = ChatService(bot, topic_service, notification_service)
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
@@ -59,7 +36,9 @@ async def main():
             try:
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
                 if not chat_member.can_manage_topics:
-                    await message.answer("Бот не имеет прав для создания тем.")
+                    await message.answer(
+                        "Бот не имеет прав для создания тем. Дайте права администратора с 'Управление темами'."
+                    )
                     return
                 spot_name = (
                     message.text.split(maxsplit=1)[1]
@@ -139,6 +118,29 @@ async def main():
             except Exception as e:
                 logger.error(f"Ошибка в cmd_test_notification: {e}")
                 await message.answer(f"Не удалось отправить уведомление: {e}")
+
+        # Хендлер для теста чата
+        @dp.message(Command(commands=["test_chat"]))
+        async def cmd_test_chat(message: types.Message):
+            """Тест отправки сообщения в тему."""
+            try:
+                spot_name = (
+                    message.text.split(maxsplit=1)[1]
+                    if len(message.text.split()) > 1
+                    else "Тест"
+                )
+                message_id = await chat_service.send_message_to_spot(
+                    spot_name, "Тестовое сообщение", message.from_user.id
+                )
+                if message_id:
+                    await message.answer(
+                        f"Сообщение отправлено в тему '{spot_name}', message_id: {message_id}"
+                    )
+                else:
+                    await message.answer(f"Ошибка при отправке в тему '{spot_name}'")
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_test_chat: {e}")
+                await message.answer(f"Не удалось отправить сообщение: {e}")
 
         # Временный хендлер для получения message_thread_id
         @dp.message()
