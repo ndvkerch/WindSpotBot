@@ -1,5 +1,5 @@
 from aiogram import Bot
-from models.user import User
+from src.models.user import User
 from src.services.topic import TopicService
 from src.repositories.subscription import SubscriptionRepository
 from src.config import settings
