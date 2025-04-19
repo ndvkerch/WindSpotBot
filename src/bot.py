@@ -61,16 +61,26 @@ async def main():
         async def cmd_subscribe(message: types.Message):
             """Тестовая подписка на события."""
             try:
-                parts = message.text.split(maxsplit=2)
-                if len(parts) < 3:
+                parts = message.text.split(maxsplit=1)
+                if len(parts) < 2:
                     await message.answer(
                         "Использование: /subscribe <spot_name> <event_type>"
                     )
                     return
-                spot_name, event_type = parts[1], parts[2]
+                # Разделяем spot_name и event_type
+                command_args = parts[1].rsplit(maxsplit=1)
+                if len(command_args) < 2:
+                    await message.answer(
+                        "Укажите название спота и тип события (checkin, message, weather)"
+                    )
+                    return
+                spot_name, event_type = command_args[0], command_args[1]
+                logger.info(
+                    f"Обработка подписки: spot_name='{spot_name}', event_type='{event_type}'"
+                )
                 if event_type not in ["checkin", "message", "weather"]:
                     await message.answer(
-                        "Неверный тип события: checkin, message, weather"
+                        "Неверный тип события. Допустимые значения: checkin, message, weather"
                     )
                     return
                 await subscription_repo.create(
