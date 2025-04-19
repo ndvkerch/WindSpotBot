@@ -1,8 +1,10 @@
 from aiogram import Bot
 from typing import List
 
+
 class ChatService:
     """Сервис для управления чатами спотов."""
+
     def __init__(self, bot: Bot):
         self.bot = bot
 

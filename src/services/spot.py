@@ -1,9 +1,11 @@
 from repositories.spot import SpotRepository
 from models.spot import Spot
-from typing import List
+from typing import Optional, List
+
 
 class SpotService:
     """Сервис для управления спотами."""
+
     def __init__(self, spot_repo: SpotRepository):
         self.spot_repo = spot_repo
 

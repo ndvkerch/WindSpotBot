@@ -1,8 +1,10 @@
 from pydantic import BaseSettings
 from typing import List
 
+
 class Settings(BaseSettings):
     """Настройки бота."""
+
     BOT_TOKEN: str
     CHAT_ID: str
     ADMINS: List[int]
@@ -16,5 +18,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+
 
 settings = Settings()

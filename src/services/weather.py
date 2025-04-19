@@ -1,7 +1,9 @@
 import aiohttp
 
+
 class WeatherService:
     """Сервис для получения погоды."""
+
     def __init__(self, session: aiohttp.ClientSession):
         self.session = session
 

@@ -1,7 +1,9 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+
 class SchedulerService:
     """Сервис для планирования задач."""
+
     def __init__(self, scheduler: AsyncIOScheduler):
         self.scheduler = scheduler
 

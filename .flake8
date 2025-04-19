@@ -1,0 +1,5 @@
+[flake8]
+# Настройка длины строки в соответствии с black
+max-line-length = 88
+# Игнорировать конфликт с black
+extend-ignore = E203

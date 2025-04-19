@@ -2,8 +2,10 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
+
 class Checkin(BaseModel):
     """Модель чек-ина."""
+
     id: int
     user_id: int
     spot_id: int

@@ -1,8 +1,11 @@
 from repositories.user import UserRepository
 from repositories.spot import SpotRepository
+from typing import List
+
 
 class StatsService:
     """Сервис для статистики."""
+
     def __init__(self, user_repo: UserRepository, spot_repo: SpotRepository):
         self.user_repo = user_repo
         self.spot_repo = spot_repo

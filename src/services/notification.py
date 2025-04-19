@@ -1,8 +1,10 @@
 from aiogram import Bot
 from models.user import User
 
+
 class NotificationService:
     """Сервис для отправки уведомлений."""
+
     def __init__(self, bot: Bot):
         self.bot = bot
 
