@@ -1,0 +1,14 @@
+aiogram==3.19.0
+aiosqlite==0.20.0
+alembic==1.13.3
+aiocache==0.12.2
+aiohttp==3.10.5
+pydantic==2.9.2
+python-dotenv==1.0.1
+APScheduler==3.10.4
+timezonefinder==6.5.3
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-cov==5.0.0
+flake8==7.1.1
+black==24.8.0
