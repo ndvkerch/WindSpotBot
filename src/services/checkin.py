@@ -1,21 +1,70 @@
-from repositories.checkin import CheckinRepository
-from services.spot import SpotService
+from aiogram import Bot
+from src.models.checkin import Checkin
+from src.repositories.checkin import CheckinRepository
+from src.services.notification import NotificationService
+from src.services.spot import SpotService
+from src.models.user import User
+from datetime import datetime, timedelta
+import logging
 
 
 class CheckinService:
     """Сервис для управления чек-инами."""
 
-    def __init__(self, checkin_repo: CheckinRepository, spot_service: SpotService):
+    def __init__(
+        self,
+        bot: Bot,
+        checkin_repo: CheckinRepository,
+        notification_service: NotificationService,
+        spot_service: SpotService,
+    ):
+        self.bot = bot
         self.checkin_repo = checkin_repo
+        self.notification_service = notification_service
         self.spot_service = spot_service
 
     async def create_checkin(
-        self, user_id: int, spot_id: int, checkin_type: int, duration: int
-    ) -> int:
+        self,
+        user: User,
+        spot_id: int,
+        checkin_type: int,
+        duration: int = 3600,
+        description: str = None,
+    ) -> bool:
         """Создание чек-ина."""
-        # TODO: Реализовать логику
-        checkin_id = await self.checkin_repo.create(
-            user_id, spot_id, checkin_type, duration
-        )
-        await self.spot_service.invalidate_spot_cache(lat=None, lon=None)
-        return checkin_id
+        try:
+            spot = await self.spot_service.get_spot_by_id(spot_id)
+            if not spot:
+                logging.error(f"Спот с id {spot_id} не найден")
+                return False
+
+            now = datetime.utcnow()
+            active_until = (
+                now + timedelta(seconds=duration) if checkin_type in [1, 2] else None
+            )
+            planned_at = (
+                now + timedelta(hours=1)
+                if checkin_type == 2
+                else (now + timedelta(days=1) if checkin_type == 3 else None)
+            )
+
+            checkin = Checkin(
+                id=0,  # Автоинкремент
+                user_id=user.id,
+                spot_id=spot_id,
+                type=checkin_type,
+                duration=duration,
+                created_at=now,
+                active_until=active_until,
+                planned_at=planned_at,
+                description=description,
+            )
+            checkin_id = await self.checkin_repo.create(checkin)
+            await self.notification_service.send_checkin_notification(user, spot.name)
+            logging.info(
+                f"Чек-ин #{checkin_id} создан для пользователя {user.id} на споте id {spot_id}"
+            )
+            return True
+        except Exception as e:
+            logging.error(f"Ошибка при создании чек-ина для спота id {spot_id}: {e}")
+            return False
