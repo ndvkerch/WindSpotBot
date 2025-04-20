@@ -9,6 +9,7 @@ from src.services.notification import NotificationService
 from src.services.chat import ChatService
 from src.repositories.subscription import SubscriptionRepository
 from src.models.user import User
+from src.keyboards.main import MainKeyboards
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,6 +30,17 @@ async def main():
         )
         chat_service = ChatService(bot, topic_service, notification_service)
 
+        # Хендлер для /start
+        @dp.message(Command(commands=["start"]))
+        async def cmd_start(message: types.Message):
+            """Обработка команды /start."""
+            kb = MainKeyboards.get_main_menu()
+            await message.answer(
+                "Добро пожаловать в WindSpotBot! 🏄‍♂️\n"
+                "Найдите споты для виндсёрфинга, отметьтесь или подпишитесь на уведомления!",
+                reply_markup=kb,
+            )
+
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
         async def cmd_create_topic(message: types.Message):
@@ -37,8 +49,7 @@ async def main():
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
                 if not chat_member.can_manage_topics:
                     await message.answer(
-                        "Бот не имеет прав для создания тем. Дайте права "
-                        "администратора с 'Управление темами'."
+                        "Бот не имеет прав для создания тем. Дайте права администратора с 'Управление темами'."
                     )
                     return
                 spot_name = (
@@ -57,7 +68,7 @@ async def main():
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
 
-        # Хендлер для подписки (тест)
+        # Хендлер для подписки
         @dp.message(Command(commands=["subscribe"]))
         async def cmd_subscribe(message: types.Message):
             """Тестовая подписка на события."""
@@ -68,23 +79,19 @@ async def main():
                         "Использование: /subscribe <spot_name> <event_type>"
                     )
                     return
-                # Разделяем spot_name и event_type
                 command_args = parts[1].rsplit(maxsplit=1)
                 if len(command_args) < 2:
                     await message.answer(
-                        "Укажите название спота и тип события (checkin, "
-                        "message, weather)"
+                        "Укажите название спота и тип события (checkin, message, weather)"
                     )
                     return
                 spot_name, event_type = command_args[0], command_args[1]
                 logger.info(
-                    f"Обработка подписки: spot_name='{spot_name}', "
-                    "event_type='{event_type}'"
+                    f"Обработка подписки: spot_name='{spot_name}', event_type='{event_type}'"
                 )
                 if event_type not in ["checkin", "message", "weather"]:
                     await message.answer(
-                        "Неверный тип события. Допустимые значения: "
-                        "checkin, message, weather"
+                        "Неверный тип события. Допустимые значения: checkin, message, weather"
                     )
                     return
                 await subscription_repo.create(
@@ -148,24 +155,13 @@ async def main():
                 )
                 if message_id:
                     await message.answer(
-                        f"Сообщение отправлено в тему '{spot_name}', "
-                        "message_id: {message_id}"
+                        f"Сообщение отправлено в тему '{spot_name}', message_id: {message_id}"
                     )
                 else:
                     await message.answer(f"Ошибка при отправке в тему '{spot_name}'")
             except Exception as e:
                 logger.error(f"Ошибка в cmd_test_chat: {e}")
                 await message.answer(f"Не удалось отправить сообщение: {e}")
-
-        # Временный хендлер для получения message_thread_id
-        @dp.message()
-        async def get_topic_id(message: types.Message):
-            """Получение message_thread_id темы."""
-            thread_id = message.message_thread_id
-            if thread_id:
-                await message.answer(f"Topic ID для темы: {thread_id}")
-            else:
-                await message.answer("Это не тема или thread_id отсутствует.")
 
         logger.info("Бот запущен")
         await dp.start_polling(bot)
