@@ -22,11 +22,14 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade():
     op.create_table(
         "checkins",
-        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("user_id", sa.Integer, nullable=False),
         sa.Column("spot_id", sa.Integer, nullable=False),
-        sa.Column("checkin_type", sa.Integer, nullable=False),
+        sa.Column("type", sa.Integer, nullable=False),
+        sa.Column("duration", sa.Integer, nullable=False),
         sa.Column("created_at", sa.DateTime, nullable=False),
+        sa.Column("active_until", sa.DateTime, nullable=True),
+        sa.Column("planned_at", sa.DateTime, nullable=True),
         sa.Column("description", sa.String, nullable=True),
         sa.ForeignKeyConstraint(["spot_id"], ["spots.id"]),
     )
