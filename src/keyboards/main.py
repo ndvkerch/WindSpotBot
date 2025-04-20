@@ -4,6 +4,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
+from typing import List
 
 
 class MainKeyboards:
@@ -12,47 +13,74 @@ class MainKeyboards:
     @staticmethod
     def get_main_menu() -> ReplyKeyboardMarkup:
         """Основное меню."""
-        kb = ReplyKeyboardMarkup(resize_keyboard=True)
-        kb.add(KeyboardButton("Найти споты"))
-        kb.add(KeyboardButton("Мои чек-ины"))
-        kb.add(KeyboardButton("Топ спотов"))
-        kb.add(KeyboardButton("Мои подписки"))
-        return kb
+        buttons = [
+            [KeyboardButton(text="Найти споты")],
+            [KeyboardButton(text="Мои чек-ины")],
+            [KeyboardButton(text="Топ спотов")],
+            [KeyboardButton(text="Мои подписки")],
+        ]
+        return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
     @staticmethod
     def get_checkin_types() -> InlineKeyboardMarkup:
         """Клавиатура для типов чек-инов."""
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("На месте", callback_data="checkin:1"))
-        kb.add(InlineKeyboardButton("Прибуду", callback_data="checkin:2"))
-        kb.add(InlineKeyboardButton("Планирую", callback_data="checkin:3"))
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="На месте", callback_data="checkin:1")],
+                [InlineKeyboardButton(text="Прибуду", callback_data="checkin:2")],
+                [InlineKeyboardButton(text="Планирую", callback_data="checkin:3")],
+            ]
+        )
         return kb
 
     @staticmethod
     def get_spot_chat_button() -> InlineKeyboardMarkup:
         """Кнопка для перехода в @WindSpotChat."""
-        kb = InlineKeyboardMarkup()
-        kb.add(InlineKeyboardButton("Чат спотов", url="t.me/WindSpotChat"))
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="Чат спотов", url="t.me/WindSpotChat")]
+            ]
+        )
         return kb
 
     @staticmethod
     def get_subscription_options(spot_name: str) -> InlineKeyboardMarkup:
         """Клавиатура для управления подписками на спот."""
-        kb = InlineKeyboardMarkup()
-        kb.add(
-            InlineKeyboardButton(
-                "Подписаться на чек-ины", callback_data=f"subscribe:{spot_name}:checkin"
-            )
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Подписаться на чек-ины",
+                        callback_data=f"subscribe:{spot_name}:checkin",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Подписаться на сообщения",
+                        callback_data=f"subscribe:{spot_name}:message",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="Подписаться на погоду",
+                        callback_data=f"subscribe:{spot_name}:weather",
+                    )
+                ],
+            ]
         )
-        kb.add(
-            InlineKeyboardButton(
-                "Подписаться на сообщения",
-                callback_data=f"subscribe:{spot_name}:message",
-            )
-        )
-        kb.add(
-            InlineKeyboardButton(
-                "Подписаться на погоду", callback_data=f"subscribe:{spot_name}:weather"
-            )
+        return kb
+
+    @staticmethod
+    def get_spots_list(spots: List) -> InlineKeyboardMarkup:
+        """Клавиатура со списком спотов."""
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=spot.name, callback_data=f"spot:{spot.name}"
+                    )
+                ]
+                for spot in spots
+            ]
         )
         return kb
