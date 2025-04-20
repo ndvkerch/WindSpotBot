@@ -106,7 +106,7 @@ async def main():
                     username=callback.from_user.username,
                 )
                 success = await checkin_service.create_checkin(
-                    user, spot_id, checkin_type
+                    user, spot_id, checkin_type, duration=3600
                 )
                 spot = await spot_service.get_spot_by_id(spot_id)
                 if success:
