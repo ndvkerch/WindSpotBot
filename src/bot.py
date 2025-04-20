@@ -7,7 +7,9 @@ from src.config.config import settings
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
 from src.services.chat import ChatService
+from src.services.spot import SpotService
 from src.repositories.subscription import SubscriptionRepository
+from src.repositories.spot import SpotRepository
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
 
@@ -24,11 +26,13 @@ async def main():
     async with aiosqlite.connect("data/database.db") as db:
         # Инициализация сервисов
         subscription_repo = SubscriptionRepository(db)
+        spot_repo = SpotRepository(db)
         topic_service = TopicService(bot, db)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
         chat_service = ChatService(bot, topic_service, notification_service)
+        spot_service = SpotService(spot_repo)
 
         # Хендлер для /start
         @dp.message(Command(commands=["start"]))
@@ -40,6 +44,23 @@ async def main():
                 "Найдите споты для виндсёрфинга, отметьтесь или подпишитесь на уведомления!",
                 reply_markup=kb,
             )
+
+        # Хендлер для списка спотов
+        @dp.message(Command(commands=["spots"]))
+        async def cmd_spots(message: types.Message):
+            """Отображение списка спотов."""
+            try:
+                spots = await spot_service.get_all_spots()
+                if not spots:
+                    await message.answer(
+                        "Споты не найдены. Добавьте споты через /add_spot."
+                    )
+                    return
+                kb = MainKeyboards.get_spots_list(spots)
+                await message.answer("Выберите спот:", reply_markup=kb)
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_spots: {e}")
+                await message.answer(f"Не удалось загрузить споты: {e}")
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
