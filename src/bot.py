@@ -2,7 +2,7 @@ import asyncio
 import logging
 import aiosqlite
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command, CallbackQueryFilter
+from aiogram.filters import Command
 from src.config.config import settings
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
@@ -69,7 +69,7 @@ async def main():
                 await message.answer(f"Не удалось загрузить споты: {e}")
 
         # Callback-обработчик для выбора спота
-        @dp.callback_query(CallbackQueryFilter(lambda c: c.data.startswith("spot:")))
+        @dp.callback_query(lambda c: c.data and c.data.startswith("spot:"))
         async def callback_spot(callback: types.CallbackQuery):
             """Обработка выбора спота."""
             try:
@@ -82,6 +82,7 @@ async def main():
                 await callback.message.edit_text(
                     f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
                 )
+                # Сохраняем spot_id в callback.data для следующего шага
                 callback.data = f"checkin:{spot.id}"
                 await callback.answer()
             except Exception as e:
@@ -89,11 +90,12 @@ async def main():
                 await callback.answer(f"Ошибка: {e}", show_alert=True)
 
         # Callback-обработчик для чек-ина
-        @dp.callback_query(CallbackQueryFilter(lambda c: c.data.startswith("checkin:")))
+        @dp.callback_query(lambda c: c.data and c.data.startswith("checkin:"))
         async def callback_checkin(callback: types.CallbackQuery):
             """Обработка чек-ина."""
             try:
                 spot_id = int(callback.data.split(":", 1)[1])
+                # Извлекаем checkin_type из клавиатуры
                 checkin_type = int(
                     callback.message.reply_markup.inline_keyboard[0][
                         0
@@ -143,7 +145,7 @@ async def main():
                         f"Тема '{spot_name}' создана, thread_id: {thread_id}"
                     )
                 else:
-                    await message.answer(f"Ошибка при создания темы '{spot_name}'")
+                    await message.answer(f"Ошибка при создании темы '{spot_name}'")
             except Exception as e:
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
@@ -199,7 +201,7 @@ async def main():
                 user = User(
                     id=message.from_user.id,
                     name=message.from_user.full_name,
-                    username=message.from_user.username,
+                    username=callback.from_user.username,
                 )
                 if event_type == "checkin":
                     await notification_service.send_checkin_notification(
