@@ -2,14 +2,16 @@ import asyncio
 import logging
 import aiosqlite
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram.filters import Command, CallbackQueryFilter
 from src.config.config import settings
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
 from src.services.chat import ChatService
 from src.services.spot import SpotService
+from src.services.checkin import CheckinService
 from src.repositories.subscription import SubscriptionRepository
 from src.repositories.spot import SpotRepository
+from src.repositories.checkin import CheckinRepository
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
 
@@ -27,12 +29,16 @@ async def main():
         # Инициализация сервисов
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
+        checkin_repo = CheckinRepository(db)
         topic_service = TopicService(bot, db)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
         chat_service = ChatService(bot, topic_service, notification_service)
         spot_service = SpotService(spot_repo)
+        checkin_service = CheckinService(
+            bot, checkin_repo, notification_service, spot_service
+        )
 
         # Хендлер для /start
         @dp.message(Command(commands=["start"]))
@@ -62,6 +68,60 @@ async def main():
                 logger.error(f"Ошибка в cmd_spots: {e}")
                 await message.answer(f"Не удалось загрузить споты: {e}")
 
+        # Callback-обработчик для выбора спота
+        @dp.callback_query(CallbackQueryFilter(lambda c: c.data.startswith("spot:")))
+        async def callback_spot(callback: types.CallbackQuery):
+            """Обработка выбора спота."""
+            try:
+                spot_name = callback.data.split(":", 1)[1]
+                spot = await spot_service.get_spot(spot_name)
+                if not spot:
+                    await callback.message.edit_text(f"Спот '{spot_name}' не найден.")
+                    return
+                kb = MainKeyboards.get_checkin_types()
+                await callback.message.edit_text(
+                    f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
+                )
+                # Сохраняем spot_id в callback.data
+                callback.data = f"checkin:{spot.id}"
+                await callback.answer()
+            except Exception as e:
+                logger.error(f"Ошибка в callback_spot: {e}")
+                await callback.answer(f"Ошибка: {e}", show_alert=True)
+
+        # Callback-обработчик для чек-ина
+        @dp.callback_query(CallbackQueryFilter(lambda c: c.data.startswith("checkin:")))
+        async def callback_checkin(callback: types.CallbackQuery):
+            """Обработка чек-ина."""
+            try:
+                spot_id = int(callback.data.split(":", 1)[1])
+                checkin_type = int(
+                    callback.message.reply_markup.inline_keyboard[0][
+                        0
+                    ].callback_data.split(":")[1]
+                )
+                user = User(
+                    id=callback.from_user.id,
+                    name=callback.from_user.full_name,
+                    username=callback.from_user.username,
+                )
+                success = await checkin_service.create_checkin(
+                    user, spot_id, checkin_type
+                )
+                spot = await spot_service.get_spot_by_id(spot_id)
+                if success:
+                    await callback.message.edit_text(
+                        f"Чек-ин на споте '{spot.name}' успешно создан!"
+                    )
+                else:
+                    await callback.message.edit_text(
+                        f"Ошибка при создании чек-ина на споте '{spot.name}'."
+                    )
+                await callback.answer()
+            except Exception as e:
+                logger.error(f"Ошибка в callback_checkin: {e}")
+                await callback.answer(f"Ошибка: {e}", show_alert=True)
+
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
         async def cmd_create_topic(message: types.Message):
@@ -84,7 +144,7 @@ async def main():
                         f"Тема '{spot_name}' создана, thread_id: {thread_id}"
                     )
                 else:
-                    await message.answer(f"Ошибка при создании темы '{spot_name}'")
+                    await message.answer(f"Ошибка при создания темы '{spot_name}'")
             except Exception as e:
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
