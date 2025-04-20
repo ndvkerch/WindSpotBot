@@ -82,7 +82,6 @@ async def main():
                 await callback.message.edit_text(
                     f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
                 )
-                # Сохраняем spot_id в callback.data
                 callback.data = f"checkin:{spot.id}"
                 await callback.answer()
             except Exception as e:
