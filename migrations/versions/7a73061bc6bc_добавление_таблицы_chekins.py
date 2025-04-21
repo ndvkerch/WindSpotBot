@@ -30,7 +30,6 @@ def upgrade():
         sa.Column("created_at", sa.DateTime, nullable=False),
         sa.Column("active_until", sa.DateTime, nullable=True),
         sa.Column("planned_at", sa.DateTime, nullable=True),
-        sa.Column("description", sa.String, nullable=True),
         sa.ForeignKeyConstraint(["spot_id"], ["spots.id"]),
     )
 

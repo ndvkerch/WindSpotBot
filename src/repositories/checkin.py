@@ -13,8 +13,8 @@ class CheckinRepository:
     async def create(self, checkin: Checkin) -> int:
         """Создание чек-ина."""
         async with self.db.execute(
-            "INSERT INTO checkins (user_id, spot_id, type, duration, created_at, active_until, planned_at, description) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO checkins (user_id, spot_id, type, duration, created_at, active_until, planned_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 checkin.user_id,
                 checkin.spot_id,
@@ -23,7 +23,6 @@ class CheckinRepository:
                 checkin.created_at,
                 checkin.active_until,
                 checkin.planned_at,
-                checkin.description,
             ),
         ) as cursor:
             await self.db.commit()
@@ -32,7 +31,7 @@ class CheckinRepository:
     async def get_by_user(self, user_id: int) -> List[Checkin]:
         """Получение чек-инов пользователя."""
         async with self.db.execute(
-            "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, description "
+            "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, "
             "FROM checkins WHERE user_id = ?",
             (user_id,),
         ) as cursor:
@@ -47,7 +46,6 @@ class CheckinRepository:
                     created_at=row[5],
                     active_until=row[6],
                     planned_at=row[7],
-                    description=row[8],
                 )
                 for row in rows
             ]
