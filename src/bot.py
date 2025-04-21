@@ -332,7 +332,7 @@ async def main():
             data = await state.get_data()
             description = None if message.text == "/skip" else message.text.strip()
             try:
-                spot_id = await spot_service.add_spot(
+                spot_id, error = await spot_service.add_spot(
                     name=data["name"],
                     latitude=data["latitude"],
                     longitude=data["longitude"],
@@ -342,9 +342,7 @@ async def main():
                 if spot_id:
                     await message.answer(f"Спот '{data['name']}' успешно добавлен!")
                 else:
-                    await message.answer(
-                        f"Ошибка при добавлении спота '{data['name']}'."
-                    )
+                    await message.answer(f"Ошибка: {error}")
                 await state.clear()
             except Exception as e:
                 logger.error(f"Ошибка при добавлении спота: {e}")
