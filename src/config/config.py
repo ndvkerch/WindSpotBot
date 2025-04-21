@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     STATS_CACHE_TTL_SECONDS: int = 600
     MAX_SUBSCRIPTIONS_PER_USER: int = 10
     NOTIFICATION_INTERVAL_SECONDS: int = 60
+    MIN_SPOT_DISTANCE_M: int = 300
 
     class Config:
         env_file = ".env"
