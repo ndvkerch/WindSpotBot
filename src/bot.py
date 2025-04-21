@@ -3,6 +3,8 @@ import logging
 import aiosqlite
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from src.config.config import settings
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
@@ -17,6 +19,12 @@ from src.keyboards.main import MainKeyboards
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class CheckinStates(StatesGroup):
+    """Состояния для процесса чек-ина."""
+
+    selecting_type = State()
 
 
 async def main():
@@ -70,7 +78,7 @@ async def main():
 
         # Callback-обработчик для выбора спота
         @dp.callback_query(lambda c: c.data and c.data.startswith("spot:"))
-        async def callback_spot(callback: types.CallbackQuery):
+        async def callback_spot(callback: types.CallbackQuery, state: FSMContext):
             """Обработка выбора спота."""
             try:
                 spot_name = callback.data.split(":", 1)[1]
@@ -82,25 +90,29 @@ async def main():
                 await callback.message.edit_text(
                     f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
                 )
-                # Сохраняем spot_id в callback.data для следующего шага
-                callback.data = f"checkin:{spot.id}"
+                # Сохраняем spot_id в состоянии
+                await state.update_data(spot_id=spot.id)
+                await state.set_state(CheckinStates.selecting_type)
                 await callback.answer()
             except Exception as e:
                 logger.error(f"Ошибка в callback_spot: {e}")
-                await callback.answer(f"Ошибка: {e}", show_alert=True)
+                await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
 
         # Callback-обработчик для чек-ина
-        @dp.callback_query(lambda c: c.data and c.data.startswith("checkin:"))
-        async def callback_checkin(callback: types.CallbackQuery):
+        @dp.callback_query(
+            lambda c: c.data and c.data.startswith("checkin:"),
+            CheckinStates.selecting_type,
+        )
+        async def callback_checkin(callback: types.CallbackQuery, state: FSMContext):
             """Обработка чек-ина."""
             try:
-                spot_id = int(callback.data.split(":", 1)[1])
-                # Извлекаем checkin_type из клавиатуры
-                checkin_type = int(
-                    callback.message.reply_markup.inline_keyboard[0][
-                        0
-                    ].callback_data.split(":")[1]
-                )
+                # Получаем spot_id из состояния
+                data = await state.get_data()
+                spot_id = data.get("spot_id")
+                if not spot_id:
+                    await callback.message.edit_text("Ошибка: спот не выбран.")
+                    return
+                checkin_type = int(callback.data.split(":", 1)[1])
                 user = User(
                     id=callback.from_user.id,
                     name=callback.from_user.full_name,
@@ -118,10 +130,12 @@ async def main():
                     await callback.message.edit_text(
                         f"Ошибка при создании чек-ина на споте '{spot.name}'."
                     )
+                await state.clear()
                 await callback.answer()
             except Exception as e:
                 logger.error(f"Ошибка в callback_checkin: {e}")
-                await callback.answer(f"Ошибка: {e}", show_alert=True)
+                await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
+                await state.clear()
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
@@ -201,7 +215,7 @@ async def main():
                 user = User(
                     id=message.from_user.id,
                     name=message.from_user.full_name,
-                    username=callback.from_user.username,
+                    username=message.from_user.username,
                 )
                 if event_type == "checkin":
                     await notification_service.send_checkin_notification(
