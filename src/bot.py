@@ -198,18 +198,15 @@ async def main():
                 location = await geo_service.get_cached_location(user_id)
                 if location:
                     latitude, longitude = location
-                    spots = await spot_service.get_all_spots()
-                    nearby_spots = await geo_service.get_nearby_spots(
-                        spots, latitude, longitude
+                    await show_activity(
+                        message,
+                        latitude,
+                        longitude,
+                        spot_service,
+                        checkin_service,
+                        weather_service,
+                        chat_service,
                     )
-                    if not nearby_spots:
-                        await message.answer("Активные споты не найдены.")
-                        return
-                    response = "Активность на спотах:\n"
-                    for spot in nearby_spots:
-                        # TODO: Добавить данные о погоде, пользователях, чате
-                        response += f"- {spot.name} ({spot.distance:.1f} км)\n"
-                    await message.answer(response)
                     await state.clear()
                 else:
                     await geo_service.request_location(message, state)
@@ -227,18 +224,66 @@ async def main():
             location = await geo_service.process_location(message, state)
             if location:
                 latitude, longitude = location
-                spots = await spot_service.get_all_spots()
-                nearby_spots = await geo_service.get_nearby_spots(
-                    spots, latitude, longitude
+                await show_activity(
+                    message,
+                    latitude,
+                    longitude,
+                    spot_service,
+                    checkin_service,
+                    weather_service,
+                    chat_service,
                 )
-                if not nearby_spots:
-                    await message.answer("Активные споты не найдены.")
-                    return
-                response = "Активность на спотах:\n"
-                for spot in nearby_spots:
-                    # TODO: Добавить данные о погоде, пользователях, чате
-                    response += f"- {spot.name} ({spot.distance:.1f} км)\n"
-                await message.answer(response)
+
+        async def show_activity(
+            message: Message,
+            latitude: float,
+            longitude: float,
+            spot_service: SpotService,
+            checkin_service: CheckinService,
+            weather_service: WeatherService,
+            chat_service: ChatService,
+        ):
+            """Отображение активности на спотах."""
+            spots = await spot_service.get_all_spots()
+            nearby_spots = await geo_service.get_nearby_spots(
+                spots, latitude, longitude
+            )
+            if not nearby_spots:
+                await message.answer("Активные споты не найдены.")
+                return
+            response = "Активность на спотах:\n"
+            for spot in nearby_spots:
+                # Погода
+                weather = await weather_service.get_weather(
+                    spot.latitude, spot.longitude
+                )
+                weather_info = "Погода: нет данных"
+                if weather:
+                    weather_info = f"Ветер: {weather['wind_speed'] or 'N/A'} м/с, Вода: {weather['water_temperature'] or 'N/A'} °C"
+
+                # Пользователи
+                on_spot, planning = await checkin_service.get_active_users(spot.id)
+                on_spot_info = (
+                    f"На месте: {len(on_spot)} чел." if on_spot else "На месте: никого"
+                )
+                planning_info = (
+                    f"Планируют: {len(planning)} чел."
+                    if planning
+                    else "Планируют: никого"
+                )
+
+                # Чат
+                chat_link = await chat_service.get_chat_link(spot.name)
+                chat_info = f"Чат: {chat_link}" if chat_link else "Чат: не создан"
+
+                response += (
+                    f"\n- {spot.name} ({spot.distance:.1f} км)\n"
+                    f"  {weather_info}\n"
+                    f"  {on_spot_info}\n"
+                    f"  {planning_info}\n"
+                    f"  {chat_info}\n"
+                )
+            await message.answer(response)
 
         # Хендлер для списка спотов
         @dp.message(Command(commands=["spots"]))
