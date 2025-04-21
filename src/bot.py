@@ -62,6 +62,7 @@ async def main():
         )
         chat_service = ChatService(bot, topic_service, notification_service)
         spot_service = SpotService(spot_repo, geo_service)
+        weather_service = WeatherService()
         checkin_service = CheckinService(
             bot, checkin_repo, notification_service, spot_service
         )
