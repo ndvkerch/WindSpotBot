@@ -47,7 +47,6 @@ class GeoService:
             latitude = message.location.latitude
             longitude = message.location.longitude
             await self.cache_location(message.from_user.id, latitude, longitude)
-            await state.clear()
             logger.info(f"Геолокация обработана: ({latitude}, {longitude})")
             return latitude, longitude
         except Exception as e:
@@ -58,17 +57,18 @@ class GeoService:
     async def get_cached_location(self, user_id: int) -> Optional[Tuple[float, float]]:
         """Получение кэшированных координат."""
         logger.info(f"Проверка кэша геолокации для пользователя {user_id}")
-        if user_id in self.cache:
-            latitude, longitude, timestamp = self.cache[user_id]
-            if datetime.utcnow() < timestamp + timedelta(
-                seconds=settings.STATS_CACHE_TTL_SECONDS
-            ):
-                logger.info(f"Кэш валиден: ({latitude}, {longitude})")
-                return latitude, longitude
-            else:
-                logger.info("Кэш устарел, удаление")
-                del self.cache[user_id]
-        logger.info("Кэш пуст")
+        if user_id not in self.cache:
+            logger.info("Кэш пуст")
+            return None
+        latitude, longitude, timestamp = self.cache[user_id]
+        logger.debug(f"Найден кэш: ({latitude}, {longitude}), timestamp: {timestamp}")
+        if datetime.utcnow() < timestamp + timedelta(
+            seconds=settings.STATS_CACHE_TTL_SECONDS
+        ):
+            logger.info(f"Кэш валиден: ({latitude}, {longitude})")
+            return latitude, longitude
+        logger.info("Кэш устарел, удаление")
+        del self.cache[user_id]
         return None
 
     async def cache_location(self, user_id: int, latitude: float, longitude: float):
