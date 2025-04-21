@@ -426,12 +426,16 @@ async def main():
             logger.info(
                 f"Обработка геолокации спота от пользователя {message.from_user.id}"
             )
-            if message.content_type != "location":
+            if message.content_type not in ["location", "venue"]:
                 logger.warning(f"Получен неверный тип контента: {message.content_type}")
-                await message.answer("Пожалуйста, отправьте геолокацию.")
+                await message.answer("Пожалуйста, отправьте геолокацию или место.")
                 return
-            latitude = message.location.latitude
-            longitude = message.location.longitude
+            if message.content_type == "location":
+                latitude = message.location.latitude
+                longitude = message.location.longitude
+            else:  # venue
+                latitude = message.venue.location.latitude
+                longitude = message.venue.location.longitude
             logger.info(f"Получена геолокация спота: ({latitude}, {longitude})")
             await state.update_data(latitude=latitude, longitude=longitude)
             await message.answer(
