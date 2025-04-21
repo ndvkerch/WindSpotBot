@@ -1,14 +1,17 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from src.models.spot import Spot
 from src.repositories.spot import SpotRepository
+from src.services.geo import GeoService
+from src.config.config import settings
 import logging
 
 
 class SpotService:
     """Сервис для работы со спотами."""
 
-    def __init__(self, spot_repo: SpotRepository):
+    def __init__(self, spot_repo: SpotRepository, geo_service: GeoService):
         self.spot_repo = spot_repo
+        self.geo_service = geo_service
 
     async def add_spot(
         self,
@@ -17,9 +20,24 @@ class SpotService:
         longitude: float,
         created_by: int,
         description: Optional[str] = None,
-    ) -> Optional[int]:
-        """Добавление спота, возвращает ID."""
+    ) -> Tuple[Optional[int], Optional[str]]:
+        """Добавление спота, возвращает ID и сообщение об ошибке (если есть)."""
         try:
+            # Проверка на близость к существующим спотам
+            spots = await self.spot_repo.get_all()
+            for spot in spots:
+                distance = (
+                    self.geo_service.calculate_distance(
+                        latitude, longitude, spot.latitude, spot.longitude
+                    )
+                    * 1000
+                )  # в метрах
+                if distance < settings.MIN_SPOT_DISTANCE_M:
+                    return (
+                        None,
+                        f"Спот слишком близко к '{spot.name}' ({distance:.1f} м). Используйте существующий спот.",
+                    )
+
             spot = Spot(
                 id=0,
                 name=name,
@@ -32,10 +50,10 @@ class SpotService:
             logging.info(
                 f"Спот '{name}' добавлен пользователем {created_by}, id: {spot_id}"
             )
-            return spot_id
+            return spot_id, None
         except Exception as e:
             logging.error(f"Ошибка при добавлении спота '{name}': {e}")
-            return None
+            return None, str(e)
 
     async def get_spot(self, name: str) -> Optional[Spot]:
         """Получение спота по имени."""
