@@ -20,8 +20,12 @@ from src.repositories.checkin import CheckinRepository
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Убедимся, что logger работает
+logger.info("Инициализация модуля bot.py")
 
 
 class CheckinStates(StatesGroup):
