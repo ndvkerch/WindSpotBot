@@ -1,36 +1,77 @@
 # Архитектура WindSpotBot
 
-Проект использует модульную архитектуру с изолированными сервисами и репозиториями.
+Проект использует модульную архитектуру с изолированными сервисами и репозиториями, что обеспечивает независимость бизнес-логики от хендлеров и удобство тестирования.
 
 ## Структура
-- `handlers/`: Обработчики команд и callback'ов (`/start`, чек-ины).
+
+- `handlers/`: Обработчики команд и callback'ов (`/start`, `/checkin`, `/spots`, `/activity`, `/add_spot`). Планируется вынос из `bot.py` в отдельные модули.
 - `services/`: Бизнес-логика:
-  - `CheckinService`: Управление чек-инами.
-  - `SpotService`: Поиск и кэширование спотов.
-  - `NotificationService`: Отправка пуш-уведомлений подписчикам.
-  - `ChatService`: Отправка и получение сообщений в темах спотов, создание тем.
-  - `TopicService`: Управление темами.
-  - `RatingService`: Оценка спотов.
-  - `WeatherService`: Получение погоды.
-  - `SchedulerService`: Планировщик задач.
-  - `StatsService`: Статистика.
-- `repositories/`: Работа с БД:
+  - `CheckinService`: Управление чек-инами (создание, получение активных пользователей).
+  - `SpotService`: Управление спотами (поиск, добавление, кэширование).
+  - `GeoService`: Работа с геолокацией (расчёт расстояний, кэширование координат).
+  - `NotificationService`: Отправка уведомлений подписчикам (чек-ины, сообщения, погода).
+  - `ChatService`: Отправка/получение сообщений в темах спотов, создание тем.
+  - `TopicService`: Управление темами в Telegram.
+  - `WeatherService`: Получение данных о погоде через API Open-Meteo.
+  - `SubscriptionService`: Управление подписками (в разработке).
+  - `RatingService`: Оценка спотов (планируется).
+  - `SchedulerService`: Планировщик задач (планируется).
+  - `StatsService`: Статистика активности (планируется).
+- `repositories/`: Работа с базой данных:
   - `UserRepository`: Пользователи.
   - `SpotRepository`: Споты.
   - `CheckinRepository`: Чек-ины.
   - `SubscriptionRepository`: Подписки.
-- `models/`: Pydantic-модели (`User`, `Spot`, `Checkin`, `Subscription`).
-- `keyboards/`: Клавиатуры (`main.py`).
-- `config/`: Конфигурация (`config.py`, `topics.py`).
+- `models/`: Pydantic-модели:
+  - `User`: Пользователь.
+  - `Spot`: Спот.
+  - `SpotWithDistance`: Спот с расстоянием до пользователя.
+  - `Checkin`: Чек-ин.
+  - `Subscription`: Подписка.
+- `keyboards/`: Клавиатуры:
+  - `main.py`: Главное меню, списки спотов, типы чек-инов.
+- `config/`: Конфигурация:
+  - `config.py`: Загрузка `.env`.
+  - `topics.py`: Настройки тем (если используется).
 
 ## Схема взаимодействия
+
 ```
 Handlers -> Services -> Repositories -> SQLite (data/database.db)
 ```
 
+- **Хендлеры**: Обрабатывают команды и callback'ы, вызывая сервисы. Не содержат бизнес-логики.
+- **Сервисы**: Реализуют бизнес-логику, взаимодействуют с репозиториями и внешними API (например, Open-Meteo).
+- **Репозитории**: Инкапсулируют работу с базой данных SQLite (`data/database.db`).
+
 ## Чат спотов
-- Telegram Topics в @WindSpotChat.
+
+- Темы в Telegram-группе `@WindSpotChat` для каждого спота.
 - `ChatService`: Отправка/получение сообщений, создание тем при первом сообщении.
-- `NotificationService`: Пуши подписчикам (чек-ины, сообщения, погода).
-- Хранилище: `spot_topics`, `subscriptions` в `data/database.db`.
-- @WindSpotRU: Техническая поддержка.
+- `NotificationService`: Уведомления подписчикам о чек-инах, сообщениях, погоде.
+- Хранилище:
+  - Таблица `spot_topics`: Связь спотов и тем.
+  - Таблица `subscriptions`: Подписки пользователей.
+- Техническая поддержка: `@WindSpotRU`.
+
+## База данных
+
+- SQLite: `data/database.db`.
+- Таблицы:
+  - `users`: Пользователи (id, username, created_at).
+  - `spots`: Споты (id, name, latitude, longitude, description, created_by).
+  - `checkins`: Чек-ины (id, user_id, spot_id, type, created_at).
+  - `subscriptions`: Подписки (user_id, spot_id, created_at).
+  - `spot_topics`: Темы спотов (spot_id, topic_id, created_at).
+
+## Конфигурация
+
+- Файл `.env`:
+  ```
+  BOT_TOKEN=your_bot_token
+  CHAT_ID=your_chat_id
+  MIN_SPOT_DISTANCE_M=300
+  NEARBY_SPOTS_LIMIT=5
+  STATS_CACHE_TTL_SECONDS=3600
+  ```
+- Загружается через `config.py` с использованием `pydantic_settings`.
