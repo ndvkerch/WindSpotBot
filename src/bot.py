@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import aiosqlite
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher
+from aiogram.filters import Command, ContentTypeFilter
+from aiogram.types import Message, ContentType
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.config.config import settings
@@ -67,7 +68,7 @@ async def main():
 
         # Хендлер для /start
         @dp.message(Command(commands=["start"]))
-        async def cmd_start(message: types.Message):
+        async def cmd_start(message: Message):
             """Обработка команды /start."""
             kb = MainKeyboards.get_main_menu()
             await message.answer(
@@ -78,7 +79,7 @@ async def main():
 
         # Хендлер для чек-ина
         @dp.message(Command(commands=["checkin"]))
-        async def cmd_checkin(message: types.Message, state: FSMContext):
+        async def cmd_checkin(message: Message, state: FSMContext):
             """Начало процесса чек-ина."""
             try:
                 user_id = message.from_user.id
@@ -105,9 +106,10 @@ async def main():
 
         # Обработка геолокации для чек-ина
         @dp.message(
-            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+            GeoStates.requesting_location,
+            ContentTypeFilter(content_types=ContentType.LOCATION),
         )
-        async def process_checkin_location(message: types.Message, state: FSMContext):
+        async def process_checkin_location(message: Message, state: FSMContext):
             """Обработка геолокации для чек-ина."""
             location = await geo_service.process_location(message, state)
             if location:
@@ -126,7 +128,7 @@ async def main():
                 await state.set_state(CheckinStates.selecting_spot)
 
         # Выбор спота для чек-ина
-        @dp.callback_query(
+        @dp.message(
             lambda c: c.data and c.data.startswith("spot:"),
             CheckinStates.selecting_spot,
         )
@@ -150,7 +152,7 @@ async def main():
                 await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
 
         # Выбор типа чек-ина
-        @dp.callback_query(
+        @dp.message(
             lambda c: c.data and c.data.startswith("checkin:"),
             CheckinStates.selecting_type,
         )
@@ -189,7 +191,7 @@ async def main():
 
         # Хендлер для просмотра активности
         @dp.message(Command(commands=["activity"]))
-        async def cmd_activity(message: types.Message, state: FSMContext):
+        async def cmd_activity(message: Message, state: FSMContext):
             """Просмотр активности на ближайших спотах."""
             try:
                 user_id = message.from_user.id
@@ -217,9 +219,10 @@ async def main():
 
         # Обработка геолокации для активности
         @dp.message(
-            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+            GeoStates.requesting_location,
+            ContentTypeFilter(content_types=ContentType.LOCATION),
         )
-        async def process_activity_location(message: types.Message, state: FSMContext):
+        async def process_activity_location(message: Message, state: FSMContext):
             """Обработка геолокации для активности."""
             location = await geo_service.process_location(message, state)
             if location:
@@ -239,7 +242,7 @@ async def main():
 
         # Хендлер для списка спотов
         @dp.message(Command(commands=["spots"]))
-        async def cmd_spots(message: types.Message, state: FSMContext):
+        async def cmd_spots(message: Message, state: FSMContext):
             """Запрос геолокации для отображения ближайших спотов."""
             try:
                 user_id = message.from_user.id
@@ -266,9 +269,10 @@ async def main():
 
         # Обработка геолокации для спотов
         @dp.message(
-            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+            GeoStates.requesting_location,
+            ContentTypeFilter(content_types=ContentType.LOCATION),
         )
-        async def process_spots_location(message: types.Message, state: FSMContext):
+        async def process_spots_location(message: Message, state: FSMContext):
             """Обработка геолокации и отображение ближайших спотов."""
             location = await geo_service.process_location(message, state)
             if location:
@@ -287,13 +291,13 @@ async def main():
 
         # Хендлер для /add_spot
         @dp.message(Command(commands=["add_spot"]))
-        async def cmd_add_spot(message: types.Message, state: FSMContext):
+        async def cmd_add_spot(message: Message, state: FSMContext):
             """Начало процесса добавления спота."""
             await message.answer("Введите название спота:")
             await state.set_state(AddSpotStates.entering_name)
 
         @dp.message(AddSpotStates.entering_name)
-        async def process_spot_name(message: types.Message, state: FSMContext):
+        async def process_spot_name(message: Message, state: FSMContext):
             """Обработка названия спота."""
             name = message.text.strip()
             if not name:
@@ -306,9 +310,10 @@ async def main():
             await state.set_state(AddSpotStates.entering_location)
 
         @dp.message(
-            AddSpotStates.entering_location, content_types=types.ContentType.LOCATION
+            AddSpotStates.entering_location,
+            ContentTypeFilter(content_types=ContentType.LOCATION),
         )
-        async def process_spot_location(message: types.Message, state: FSMContext):
+        async def process_spot_location(message: Message, state: FSMContext):
             """Обработка геолокации спота."""
             if not message.location:
                 await message.answer("Пожалуйста, отправьте геолокацию.")
@@ -322,7 +327,7 @@ async def main():
             await state.set_state(AddSpotStates.entering_description)
 
         @dp.message(AddSpotStates.entering_description)
-        async def process_spot_description(message: types.Message, state: FSMContext):
+        async def process_spot_description(message: Message, state: FSMContext):
             """Обработка описания спота."""
             data = await state.get_data()
             description = None if message.text == "/skip" else message.text.strip()
@@ -348,7 +353,7 @@ async def main():
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
-        async def cmd_create_topic(message: types.Message):
+        async def cmd_create_topic(message: Message):
             """Создание темы для спота."""
             try:
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
@@ -375,7 +380,7 @@ async def main():
 
         # Хендлер для подписки
         @dp.message(Command(commands=["subscribe"]))
-        async def cmd_subscribe(message: types.Message):
+        async def cmd_subscribe(message: Message):
             """Тестовая подписка на события."""
             try:
                 parts = message.text.split(maxsplit=1)
@@ -411,7 +416,7 @@ async def main():
 
         # Хендлер для теста уведомлений
         @dp.message(Command(commands=["test_notification"]))
-        async def cmd_test_notification(message: types.Message):
+        async def cmd_test_notification(message: Message):
             """Тест отправки уведомления."""
             try:
                 parts = message.text.split(maxsplit=2)
@@ -447,7 +452,7 @@ async def main():
 
         # Хендлер для теста чата
         @dp.message(Command(commands=["test_chat"]))
-        async def cmd_test_chat(message: types.Message):
+        async def cmd_test_chat(message: Message):
             """Тест отправки сообщения в тему."""
             try:
                 spot_name = (
