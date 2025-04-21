@@ -11,3 +11,10 @@ class Spot(BaseModel):
     longitude: float
     description: Optional[str] = None
     created_by: int
+
+
+class SpotWithDistance(BaseModel):
+    """Модель спота с расстоянием."""
+
+    spot: Spot
+    distance: float
