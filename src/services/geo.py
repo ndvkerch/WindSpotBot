@@ -8,6 +8,8 @@ import math
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 
+logger = logging.getLogger(__name__)
+
 
 class GeoService:
     """Сервис для работы с геолокацией."""
@@ -24,7 +26,6 @@ class GeoService:
             f"Запрос геолокации для пользователя {message.from_user.id}, текущее состояние: {await state.get_state()}"
         )
         try:
-            logger.info(f"Запрос геолокации для пользователя {message.from_user.id}")
             await message.answer("Отправьте вашу геолокацию:")
             return None
         except Exception as e:
@@ -39,7 +40,6 @@ class GeoService:
             f"Обработка геолокации от пользователя {message.from_user.id}, состояние: {await state.get_state()}"
         )
         try:
-            logger.info(f"Обработка геолокации от пользователя {message.from_user.id}")
             if not message.location:
                 logger.warning("Сообщение не содержит геолокацию")
                 await message.answer("Пожалуйста, отправьте геолокацию.")
