@@ -62,3 +62,33 @@ class CheckinService:
         except Exception as e:
             logging.error(f"Ошибка при создании чек-ина для спота id {spot_id}: {e}")
             return False
+
+    async def get_active_users(self, spot_id: int) -> tuple[list[User], list[User]]:
+        """Получение активных и планирующих пользователей на споте."""
+        try:
+            now = datetime.utcnow()
+            checkins = await self.checkin_repo.get_by_spot(spot_id)
+            on_spot = []
+            planning = []
+            for checkin in checkins:
+                user = User(
+                    id=checkin.user_id, name="", username=""
+                )  # TODO: Получать имя/ник
+                if (
+                    checkin.type == 1
+                    and checkin.active_until
+                    and now < checkin.active_until
+                ):
+                    on_spot.append(user)
+                elif (
+                    checkin.type == 3
+                    and checkin.planned_at
+                    and now < checkin.planned_at
+                ):
+                    planning.append(user)
+            return on_spot, planning
+        except Exception as e:
+            logging.error(
+                f"Ошибка при получении пользователей для спота id {spot_id}: {e}"
+            )
+            return [], []
