@@ -599,6 +599,30 @@ async def main():
                 logger.error(f"Ошибка в cmd_test_chat: {e}")
                 await message.answer(f"Не удалось отправить сообщение: {e}")
 
+                # Хендлер для кнопок главного меню
+
+        @dp.callback_query(
+            lambda c: c.data in ["checkin", "spots", "activity", "add_spot"]
+        )
+        async def process_main_menu(callback: CallbackQuery, state: FSMContext):
+            """Обработка нажатий на кнопки главного меню."""
+            logger.info(
+                f"Обработка callback главного меню: {callback.data} от пользователя {callback.from_user.id}"
+            )
+            try:
+                if callback.data == "checkin":
+                    await cmd_checkin(callback.message, state)
+                elif callback.data == "spots":
+                    await cmd_spots(callback.message, state)
+                elif callback.data == "activity":
+                    await cmd_activity(callback.message, state)
+                elif callback.data == "add_spot":
+                    await cmd_add_spot(callback.message, state)
+                await callback.answer()
+            except Exception as e:
+                logger.error(f"Ошибка в process_main_menu: {e}")
+                await callback.message.answer(f"Ошибка: {str(e)}")
+
         logger.info("Бот запущен")
         await dp.start_polling(bot)
 
