@@ -1,7 +1,7 @@
 from aiogram import Bot
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from src.models.spot import Spot
+from src.models.spot import Spot, SpotWithDistance
 from src.config.config import settings
 import logging
 import math
@@ -94,26 +94,32 @@ class GeoService:
         logger.debug(f"Расстояние: {distance} км")
         return distance
 
-    async def get_nearby_spots(
-        self, spots: List[Spot], latitude: float, longitude: float
-    ) -> List[Spot]:
-        """Получение ближайших спотов."""
-        try:
-            logger.info(f"Получение ближайших спотов для ({latitude}, {longitude})")
-            if not spots:
-                logger.warning("Список спотов пуст")
-                return []
-            # Добавляем расстояние к спотам
-            for spot in spots:
-                spot.distance = self.calculate_distance(
-                    latitude, longitude, spot.latitude, spot.longitude
-                )
-            # Сортируем и ограничиваем
-            nearby = sorted(spots, key=lambda x: x.distance)[
-                : settings.NEARBY_SPOTS_LIMIT
-            ]
-            logger.info(f"Найдено {len(nearby)} ближайших спотов")
-            return nearby
-        except Exception as e:
-            logger.error(f"Ошибка при получении ближайших спотов: {e}")
+
+async def get_nearby_spots(
+    self, spots: List[Spot], latitude: float, longitude: float
+) -> List[SpotWithDistance]:
+    """Получение ближайших спотов с расстоянием."""
+    try:
+        logger.info(f"Получение ближайших спотов для ({latitude}, {longitude})")
+        if not spots:
+            logger.warning("Список спотов пуст")
             return []
+        # Создаём список SpotWithDistance
+        spots_with_distance = [
+            SpotWithDistance(
+                spot=spot,
+                distance=self.calculate_distance(
+                    latitude, longitude, spot.latitude, spot.longitude
+                ),
+            )
+            for spot in spots
+        ]
+        # Сортируем и ограничиваем
+        nearby = sorted(spots_with_distance, key=lambda x: x.distance)[
+            : settings.NEARBY_SPOTS_LIMIT
+        ]
+        logger.info(f"Найдено {len(nearby)} ближайших спотов")
+        return nearby
+    except Exception as e:
+        logger.error(f"Ошибка при получении ближайших спотов: {e}")
+        return []
