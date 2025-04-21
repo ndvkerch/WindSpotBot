@@ -62,7 +62,7 @@ class GeoService:
             return None
         latitude, longitude, timestamp = self.cache[user_id]
         logger.debug(f"Найден кэш: ({latitude}, {longitude}), timestamp: {timestamp}")
-        if datetime.utcnow() < timestamp + timedelta(
+        if datetime.utcnow() <= timestamp + timedelta(
             seconds=settings.STATS_CACHE_TTL_SECONDS
         ):
             logger.info(f"Кэш валиден: ({latitude}, {longitude})")
