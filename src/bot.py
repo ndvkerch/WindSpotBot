@@ -27,6 +27,14 @@ class CheckinStates(StatesGroup):
     selecting_type = State()
 
 
+class AddSpotStates(StatesGroup):
+    """Состояния для добавления спота."""
+
+    entering_name = State()
+    entering_location = State()
+    entering_description = State()
+
+
 async def main():
     """Запуск бота."""
     bot = Bot(token=settings.BOT_TOKEN)
@@ -135,6 +143,67 @@ async def main():
             except Exception as e:
                 logger.error(f"Ошибка в callback_checkin: {e}")
                 await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
+                await state.clear()
+
+        # Хендлер для /add_spot
+        @dp.message(Command(commands=["add_spot"]))
+        async def cmd_add_spot(message: types.Message, state: FSMContext):
+            """Начало процесса добавления спота."""
+            await message.answer("Введите название спота:")
+            await state.set_state(AddSpotStates.entering_name)
+
+        @dp.message(AddSpotStates.entering_name)
+        async def process_spot_name(message: types.Message, state: FSMContext):
+            """Обработка названия спота."""
+            name = message.text.strip()
+            if not name:
+                await message.answer("Название не может быть пустым. Попробуйте снова:")
+                return
+            await state.update_data(name=name)
+            await message.answer(
+                "Отправьте геолокацию спота (используйте кнопку 'Отправить геолокацию' в Telegram):"
+            )
+            await state.set_state(AddSpotStates.entering_location)
+
+        @dp.message(
+            AddSpotStates.entering_location, content_types=types.ContentType.LOCATION
+        )
+        async def process_spot_location(message: types.Message, state: FSMContext):
+            """Обработка геолокации спота."""
+            if not message.location:
+                await message.answer("Пожалуйста, отправьте геолокацию.")
+                return
+            latitude = message.location.latitude
+            longitude = message.location.longitude
+            await state.update_data(latitude=latitude, longitude=longitude)
+            await message.answer(
+                "Введите описание спота (или отправьте /skip, чтобы пропустить):"
+            )
+            await state.set_state(AddSpotStates.entering_description)
+
+        @dp.message(AddSpotStates.entering_description)
+        async def process_spot_description(message: types.Message, state: FSMContext):
+            """Обработка описания спота."""
+            data = await state.get_data()
+            description = None if message.text == "/skip" else message.text.strip()
+            try:
+                spot_id = await spot_service.add_spot(
+                    name=data["name"],
+                    latitude=data["latitude"],
+                    longitude=data["longitude"],
+                    created_by=message.from_user.id,
+                    description=description,
+                )
+                if spot_id:
+                    await message.answer(f"Спот '{data['name']}' успешно добавлен!")
+                else:
+                    await message.answer(
+                        f"Ошибка при добавлении спота '{data['name']}'."
+                    )
+                await state.clear()
+            except Exception as e:
+                logger.error(f"Ошибка при добавлении спота: {e}")
+                await message.answer(f"Ошибка: {str(e)}")
                 await state.clear()
 
         # Хендлер для создания темы
