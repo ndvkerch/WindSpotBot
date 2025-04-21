@@ -130,11 +130,20 @@ async def main():
             logger.info(
                 f"Обработка геолокации для чек-ина от пользователя {message.from_user.id}"
             )
-            if message.content_type != "location":
+            if message.content_type not in ["location", "venue"]:
                 logger.warning(f"Получен неверный тип контента: {message.content_type}")
-                await message.answer("Пожалуйста, отправьте геолокацию.")
+                await message.answer("Пожалуйста, отправьте геолокацию или место.")
                 return
-            location = await geo_service.process_location(message, state)
+            if message.content_type == "location":
+                location = await geo_service.process_location(message, state)
+            else:  # venue
+                latitude = message.venue.location.latitude
+                longitude = message.venue.location.longitude
+                await geo_service.cache_location(
+                    message.from_user.id, latitude, longitude
+                )
+                location = (latitude, longitude)
+                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
@@ -259,11 +268,20 @@ async def main():
             logger.info(
                 f"Обработка геолокации для активности от пользователя {message.from_user.id}"
             )
-            if message.content_type != "location":
+            if message.content_type not in ["location", "venue"]:
                 logger.warning(f"Получен неверный тип контента: {message.content_type}")
-                await message.answer("Пожалуйста, отправьте геолокацию.")
+                await message.answer("Пожалуйста, отправьте геолокацию или место.")
                 return
-            location = await geo_service.process_location(message, state)
+            if message.content_type == "location":
+                location = await geo_service.process_location(message, state)
+            else:  # venue
+                latitude = message.venue.location.latitude
+                longitude = message.venue.location.longitude
+                await geo_service.cache_location(
+                    message.from_user.id, latitude, longitude
+                )
+                location = (latitude, longitude)
+                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
@@ -373,11 +391,20 @@ async def main():
             logger.info(
                 f"Обработка геолокации для спотов от пользователя {message.from_user.id}"
             )
-            if message.content_type != "location":
+            if message.content_type not in ["location", "venue"]:
                 logger.warning(f"Получен неверный тип контента: {message.content_type}")
-                await message.answer("Пожалуйста, отправьте геолокацию.")
+                await message.answer("Пожалуйста, отправьте геолокацию или место.")
                 return
-            location = await geo_service.process_location(message, state)
+            if message.content_type == "location":
+                location = await geo_service.process_location(message, state)
+            else:  # venue
+                latitude = message.venue.location.latitude
+                longitude = message.venue.location.longitude
+                await geo_service.cache_location(
+                    message.from_user.id, latitude, longitude
+                )
+                location = (latitude, longitude)
+                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
