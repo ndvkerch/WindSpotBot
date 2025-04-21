@@ -5,6 +5,8 @@ from src.services.notification import NotificationService
 from src.config.config import settings
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 class ChatService:
     """Сервис для управления чатами спотов."""
@@ -23,15 +25,15 @@ class ChatService:
         self, spot_name: str, text: str, user_id: int
     ) -> Optional[int]:
         """Отправка сообщения в тему спота, создание темы при необходимости."""
-        logging.info(f"Попытка отправить сообщение в тему '{spot_name}'")
+        logger.info(f"Попытка отправить сообщение в тему '{spot_name}'")
         thread_id = await self.topic_service.get_topic_id(spot_name)
         if not thread_id:
-            logging.info(f"Тема '{spot_name}' не найдена, создаём новую")
+            logger.info(f"Тема '{spot_name}' не найдена, создаём новую")
             thread_id = await self.topic_service.create_topic(spot_name)
             if not thread_id:
-                logging.error(f"Не удалось создать тему для спота '{spot_name}'")
+                logger.error(f"Не удалось создать тему для спота '{spot_name}'")
                 return None
-            logging.info(f"Тема '{spot_name}' создана, thread_id: {thread_id}")
+            logger.info(f"Тема '{spot_name}' создана, thread_id: {thread_id}")
 
         try:
             message = await self.bot.send_message(
@@ -44,13 +46,12 @@ class ChatService:
             await self.notification_service.send_message_notification(
                 spot_name, text, user
             )
-            logging.info(
-                f"Сообщение отправлено в тему '{spot_name}', "
-                "message_id: {message.message_id}"
+            logger.info(
+                f"Сообщение отправлено в тему '{spot_name}', message_id: {message.message_id}"
             )
             return message.message_id
         except Exception as e:
-            logging.error(f"Ошибка при отправке сообщения в тему '{spot_name}': {e}")
+            logger.error(f"Ошибка при отправке сообщения в тему '{spot_name}': {e}")
             return None
 
     async def get_chat_link(self, spot_name: str) -> Optional[str]:
@@ -58,18 +59,19 @@ class ChatService:
         try:
             thread_id = await self.topic_service.get_topic_id(spot_name)
             if not thread_id:
+                logger.warning(f"Тема '{spot_name}' не найдена")
                 return None
-            chat = await self.bot.get_chat(self.topic_service.chat_id)
+            chat = await self.bot.get_chat(settings.CHAT_ID)
             return f"https://t.me/{chat.username}/{thread_id}"
         except Exception as e:
-            logging.error(f"Ошибка при получении ссылки на чат '{spot_name}': {e}")
+            logger.error(f"Ошибка при получении ссылки на чат '{spot_name}': {e}")
             return None
 
     async def get_spot_messages(self, spot_name: str, limit: int = 10) -> List[dict]:
         """Получение последних сообщений из темы спота (заглушка)."""
         thread_id = await self.topic_service.get_topic_id(spot_name)
         if not thread_id:
-            logging.warning(f"Тема '{spot_name}' не найдена")
+            logger.warning(f"Тема '{spot_name}' не найдена")
             return []
 
         # TODO: Реализовать получение сообщений через Telegram API (Этап 2)
