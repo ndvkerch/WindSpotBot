@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.config.config import settings
+from src.services.geo import GeoService, GeoStates
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
 from src.services.chat import ChatService
@@ -24,6 +25,7 @@ logger = logging.getLogger(__name__)
 class CheckinStates(StatesGroup):
     """Состояния для процесса чек-ина."""
 
+    selecting_spot = State()
     selecting_type = State()
 
 
@@ -33,6 +35,12 @@ class AddSpotStates(StatesGroup):
     entering_name = State()
     entering_location = State()
     entering_description = State()
+
+
+class ActivityStates(StatesGroup):
+    """Состояния для просмотра активности."""
+
+    viewing_activity = State()
 
 
 async def main():
@@ -46,6 +54,7 @@ async def main():
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
         checkin_repo = CheckinRepository(db)
+        geo_service = GeoService(bot)
         topic_service = TopicService(bot, db)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
@@ -67,25 +76,60 @@ async def main():
                 reply_markup=kb,
             )
 
-        # Хендлер для списка спотов
-        @dp.message(Command(commands=["spots"]))
-        async def cmd_spots(message: types.Message):
-            """Отображение списка спотов."""
+        # Хендлер для чек-ина
+        @dp.message(Command(commands=["checkin"]))
+        async def cmd_checkin(message: types.Message, state: FSMContext):
+            """Начало процесса чек-ина."""
             try:
+                user_id = message.from_user.id
+                location = await geo_service.get_cached_location(user_id)
+                if location:
+                    latitude, longitude = location
+                    spots = await spot_service.get_all_spots()
+                    nearby_spots = await geo_service.get_nearby_spots(
+                        spots, latitude, longitude
+                    )
+                    if not nearby_spots:
+                        await message.answer(
+                            "Споты не найдены. Добавьте споты через /add_spot."
+                        )
+                        return
+                    kb = MainKeyboards.get_spots_list(nearby_spots)
+                    await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+                    await state.set_state(CheckinStates.selecting_spot)
+                else:
+                    await geo_service.request_location(message, state)
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_checkin: {e}")
+                await message.answer(f"Ошибка: {str(e)}")
+
+        # Обработка геолокации для чек-ина
+        @dp.message(
+            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+        )
+        async def process_checkin_location(message: types.Message, state: FSMContext):
+            """Обработка геолокации для чек-ина."""
+            location = await geo_service.process_location(message, state)
+            if location:
+                latitude, longitude = location
                 spots = await spot_service.get_all_spots()
-                if not spots:
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
                     await message.answer(
                         "Споты не найдены. Добавьте споты через /add_spot."
                     )
                     return
-                kb = MainKeyboards.get_spots_list(spots)
-                await message.answer("Выберите спот:", reply_markup=kb)
-            except Exception as e:
-                logger.error(f"Ошибка в cmd_spots: {e}")
-                await message.answer(f"Не удалось загрузить споты: {e}")
+                kb = MainKeyboards.get_spots_list(nearby_spots)
+                await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+                await state.set_state(CheckinStates.selecting_spot)
 
-        # Callback-обработчик для выбора спота
-        @dp.callback_query(lambda c: c.data and c.data.startswith("spot:"))
+        # Выбор спота для чек-ина
+        @dp.callback_query(
+            lambda c: c.data and c.data.startswith("spot:"),
+            CheckinStates.selecting_spot,
+        )
         async def callback_spot(callback: types.CallbackQuery, state: FSMContext):
             """Обработка выбора спота."""
             try:
@@ -98,7 +142,6 @@ async def main():
                 await callback.message.edit_text(
                     f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
                 )
-                # Сохраняем spot_id в состоянии
                 await state.update_data(spot_id=spot.id)
                 await state.set_state(CheckinStates.selecting_type)
                 await callback.answer()
@@ -106,7 +149,7 @@ async def main():
                 logger.error(f"Ошибка в callback_spot: {e}")
                 await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
 
-        # Callback-обработчик для чек-ина
+        # Выбор типа чек-ина
         @dp.callback_query(
             lambda c: c.data and c.data.startswith("checkin:"),
             CheckinStates.selecting_type,
@@ -114,7 +157,6 @@ async def main():
         async def callback_checkin(callback: types.CallbackQuery, state: FSMContext):
             """Обработка чек-ина."""
             try:
-                # Получаем spot_id из состояния
                 data = await state.get_data()
                 spot_id = data.get("spot_id")
                 if not spot_id:
@@ -144,6 +186,104 @@ async def main():
                 logger.error(f"Ошибка в callback_checkin: {e}")
                 await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
                 await state.clear()
+
+        # Хендлер для просмотра активности
+        @dp.message(Command(commands=["activity"]))
+        async def cmd_activity(message: types.Message, state: FSMContext):
+            """Просмотр активности на ближайших спотах."""
+            try:
+                user_id = message.from_user.id
+                location = await geo_service.get_cached_location(user_id)
+                if location:
+                    latitude, longitude = location
+                    spots = await spot_service.get_all_spots()
+                    nearby_spots = await geo_service.get_nearby_spots(
+                        spots, latitude, longitude
+                    )
+                    if not nearby_spots:
+                        await message.answer("Активные споты не найдены.")
+                        return
+                    response = "Активность на спотах:\n"
+                    for spot in nearby_spots:
+                        # TODO: Добавить данные о погоде, пользователях, чате
+                        response += f"- {spot.name} ({spot.distance:.1f} км)\n"
+                    await message.answer(response)
+                    await state.clear()
+                else:
+                    await geo_service.request_location(message, state)
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_activity: {e}")
+                await message.answer(f"Ошибка: {str(e)}")
+
+        # Обработка геолокации для активности
+        @dp.message(
+            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+        )
+        async def process_activity_location(message: types.Message, state: FSMContext):
+            """Обработка геолокации для активности."""
+            location = await geo_service.process_location(message, state)
+            if location:
+                latitude, longitude = location
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
+                    await message.answer("Активные споты не найдены.")
+                    return
+                response = "Активность на спотах:\n"
+                for spot in nearby_spots:
+                    # TODO: Добавить данные о погоде, пользователях, чате
+                    response += f"- {spot.name} ({spot.distance:.1f} км)\n"
+                await message.answer(response)
+
+        # Хендлер для списка спотов
+        @dp.message(Command(commands=["spots"]))
+        async def cmd_spots(message: types.Message, state: FSMContext):
+            """Запрос геолокации для отображения ближайших спотов."""
+            try:
+                user_id = message.from_user.id
+                location = await geo_service.get_cached_location(user_id)
+                if location:
+                    latitude, longitude = location
+                    spots = await spot_service.get_all_spots()
+                    nearby_spots = await geo_service.get_nearby_spots(
+                        spots, latitude, longitude
+                    )
+                    if not nearby_spots:
+                        await message.answer(
+                            "Споты не найдены. Добавьте споты через /add_spot."
+                        )
+                        return
+                    kb = MainKeyboards.get_spots_list(nearby_spots)
+                    await message.answer("Ближайшие споты:", reply_markup=kb)
+                    await state.clear()
+                else:
+                    await geo_service.request_location(message, state)
+            except Exception as e:
+                logger.error(f"Ошибка в cmd_spots: {e}")
+                await message.answer(f"Ошибка: {str(e)}")
+
+        # Обработка геолокации для спотов
+        @dp.message(
+            GeoStates.requesting_location, content_types=types.ContentType.LOCATION
+        )
+        async def process_spots_location(message: types.Message, state: FSMContext):
+            """Обработка геолокации и отображение ближайших спотов."""
+            location = await geo_service.process_location(message, state)
+            if location:
+                latitude, longitude = location
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
+                    await message.answer(
+                        "Споты не найдены. Добавьте споты через /add_spot."
+                    )
+                    return
+                kb = MainKeyboards.get_spots_list(nearby_spots)
+                await message.answer("Ближайшие споты:", reply_markup=kb)
 
         # Хендлер для /add_spot
         @dp.message(Command(commands=["add_spot"]))
@@ -228,7 +368,7 @@ async def main():
                         f"Тема '{spot_name}' создана, thread_id: {thread_id}"
                     )
                 else:
-                    await message.answer(f"Ошибка при создании темы '{spot_name}'")
+                    await message.answer(f"Ошибка при создания темы '{spot_name}'")
             except Exception as e:
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
