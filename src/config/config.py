@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     """Настройки бота."""
 
     BOT_TOKEN: str
-    CHAT_ID: str
+    CHAT_ID: int
     ADMINS: List[int]
     NEARBY_SPOTS_LIMIT: int = 5
     PLANNED_VISITS_LIMIT: int = 5
