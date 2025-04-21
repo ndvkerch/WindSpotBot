@@ -23,8 +23,6 @@ from src.keyboards.main import MainKeyboards
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Убедимся, что logger работает
 logger.info("Инициализация модуля bot.py")
 
 
@@ -170,10 +168,10 @@ async def main():
         )
         async def callback_spot(callback: CallbackQuery, state: FSMContext):
             """Обработка выбора спота."""
+            logger.info(
+                f"Выбор спота: {callback.data} пользователем {callback.from_user.id}"
+            )
             try:
-                logger.info(
-                    f"Выбор спота: {callback.data} пользователем {callback.from_user.id}"
-                )
                 spot_id = int(callback.data.split(":", 1)[1])
                 spot = await spot_service.get_spot_by_id(spot_id)
                 if not spot:
@@ -197,10 +195,10 @@ async def main():
         )
         async def callback_checkin(callback: CallbackQuery, state: FSMContext):
             """Обработка чек-ина."""
+            logger.info(
+                f"Выбор типа чек-ина: {callback.data} пользователем {callback.from_user.id}"
+            )
             try:
-                logger.info(
-                    f"Выбор типа чек-ина: {callback.data} пользователем {callback.from_user.id}"
-                )
                 data = await state.get_data()
                 spot_id = data.get("spot_id")
                 if not spot_id:
@@ -500,10 +498,8 @@ async def main():
         @dp.message(Command(commands=["create_topic"]))
         async def cmd_create_topic(message: Message):
             """Создание темы для спота."""
+            logger.info(f"Команда /create_topic от пользователя {message.from_user.id}")
             try:
-                logger.info(
-                    f"Команда /create_topic от пользователя {message.from_user.id}"
-                )
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
                 if not chat_member.can_manage_topics:
                     await message.answer(
@@ -530,10 +526,8 @@ async def main():
         @dp.message(Command(commands=["subscribe"]))
         async def cmd_subscribe(message: Message):
             """Тестовая подписка на события."""
+            logger.info(f"Команда /subscribe от пользователя {message.from_user.id}")
             try:
-                logger.info(
-                    f"Команда /subscribe от пользователя {message.from_user.id}"
-                )
                 parts = message.text.split(maxsplit=1)
                 if len(parts) < 2:
                     await message.answer(
@@ -569,10 +563,10 @@ async def main():
         @dp.message(Command(commands=["test_notification"]))
         async def cmd_test_notification(message: Message):
             """Тест отправки уведомления."""
+            logger.info(
+                f"Команда /test_notification от пользователя {message.from_user.id}"
+            )
             try:
-                logger.info(
-                    f"Команда /test_notification от пользователя {message.from_user.id}"
-                )
                 parts = message.text.split(maxsplit=2)
                 if len(parts) < 3:
                     await message.answer(
@@ -608,10 +602,8 @@ async def main():
         @dp.message(Command(commands=["test_chat"]))
         async def cmd_test_chat(message: Message):
             """Тест отправки сообщения в тему."""
+            logger.info(f"Команда /test_chat от пользователя {message.from_user.id}")
             try:
-                logger.info(
-                    f"Команда /test_chat от пользователя {message.from_user.id}"
-                )
                 spot_name = (
                     message.text.split(maxsplit=1)[1]
                     if len(message.text.split()) > 1
@@ -653,9 +645,6 @@ async def main():
                 logger.error(f"Ошибка в process_main_menu: {e}")
                 await callback.message.answer(f"Ошибка: {str(e)}")
 
-        logger.info("Бот запущен")
-        await dp.start_polling(bot)
-
         # Временный хендлер для отладки всех сообщений
         @dp.message()
         async def debug_location(message: Message, state: FSMContext):
@@ -679,6 +668,9 @@ async def main():
                 await message.answer(
                     f"Получена геолокация: ({latitude}, {longitude}), состояние: {current_state}"
                 )
+
+        logger.info("Бот запущен")
+        await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
