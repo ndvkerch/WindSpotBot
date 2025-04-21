@@ -94,32 +94,31 @@ class GeoService:
         logger.debug(f"Расстояние: {distance} км")
         return distance
 
-
-async def get_nearby_spots(
-    self, spots: List[Spot], latitude: float, longitude: float
-) -> List[SpotWithDistance]:
-    """Получение ближайших спотов с расстоянием."""
-    try:
-        logger.info(f"Получение ближайших спотов для ({latitude}, {longitude})")
-        if not spots:
-            logger.warning("Список спотов пуст")
+    async def get_nearby_spots(
+        self, spots: List[Spot], latitude: float, longitude: float
+    ) -> List[SpotWithDistance]:
+        """Получение ближайших спотов с расстоянием."""
+        try:
+            logger.info(f"Получение ближайших спотов для ({latitude}, {longitude})")
+            if not spots:
+                logger.warning("Список спотов пуст")
+                return []
+            # Создаём список SpotWithDistance
+            spots_with_distance = [
+                SpotWithDistance(
+                    spot=spot,
+                    distance=self.calculate_distance(
+                        latitude, longitude, spot.latitude, spot.longitude
+                    ),
+                )
+                for spot in spots
+            ]
+            # Сортируем и ограничиваем
+            nearby = sorted(spots_with_distance, key=lambda x: x.distance)[
+                : settings.NEARBY_SPOTS_LIMIT
+            ]
+            logger.info(f"Найдено {len(nearby)} ближайших спотов")
+            return nearby
+        except Exception as e:
+            logger.error(f"Ошибка при получении ближайших спотов: {e}")
             return []
-        # Создаём список SpotWithDistance
-        spots_with_distance = [
-            SpotWithDistance(
-                spot=spot,
-                distance=self.calculate_distance(
-                    latitude, longitude, spot.latitude, spot.longitude
-                ),
-            )
-            for spot in spots
-        ]
-        # Сортируем и ограничиваем
-        nearby = sorted(spots_with_distance, key=lambda x: x.distance)[
-            : settings.NEARBY_SPOTS_LIMIT
-        ]
-        logger.info(f"Найдено {len(nearby)} ближайших спотов")
-        return nearby
-    except Exception as e:
-        logger.error(f"Ошибка при получении ближайших спотов: {e}")
-        return []
