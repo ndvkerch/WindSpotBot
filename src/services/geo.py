@@ -1,4 +1,5 @@
 from aiogram import Bot
+from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.models.spot import Spot
@@ -23,7 +24,7 @@ class GeoService:
         self.cache = {}  # Временный кеш: {user_id: (latitude, longitude, timestamp)}
 
     async def request_location(
-        self, message: types.Message, state: FSMContext
+        self, message: Message, state: FSMContext
     ) -> Optional[Tuple[float, float]]:
         """Запрос геолокации пользователя."""
         try:
@@ -35,7 +36,7 @@ class GeoService:
             return None
 
     async def process_location(
-        self, message: types.Message, state: FSMContext
+        self, message: Message, state: FSMContext
     ) -> Optional[Tuple[float, float]]:
         """Обработка полученной геолокации."""
         try:
