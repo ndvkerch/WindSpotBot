@@ -24,12 +24,7 @@ class CheckinService:
         self.spot_service = spot_service
 
     async def create_checkin(
-        self,
-        user: User,
-        spot_id: int,
-        checkin_type: int,
-        duration: int = 3600,
-        description: str = None,
+        self, user: User, spot_id: int, checkin_type: int, duration: int = 3600
     ) -> bool:
         """Создание чек-ина."""
         try:
@@ -57,7 +52,6 @@ class CheckinService:
                 created_at=now,
                 active_until=active_until,
                 planned_at=planned_at,
-                description=description,
             )
             checkin_id = await self.checkin_repo.create(checkin)
             await self.notification_service.send_checkin_notification(user, spot.name)
