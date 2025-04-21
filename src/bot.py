@@ -656,6 +656,30 @@ async def main():
         logger.info("Бот запущен")
         await dp.start_polling(bot)
 
+        # Временный хендлер для отладки всех сообщений
+        @dp.message()
+        async def debug_location(message: Message, state: FSMContext):
+            """Отладка всех входящих сообщений."""
+            current_state = await state.get_state()
+            logger.info(
+                f"Получено сообщение от {message.from_user.id}, content_type: {message.content_type}, state: {current_state}"
+            )
+            if message.content_type in ["location", "venue"]:
+                latitude = (
+                    message.location.latitude
+                    if message.content_type == "location"
+                    else message.venue.location.latitude
+                )
+                longitude = (
+                    message.location.longitude
+                    if message.content_type == "location"
+                    else message.venue.location.longitude
+                )
+                logger.info(f"Геолокация: ({latitude}, {longitude})")
+                await message.answer(
+                    f"Получена геолокация: ({latitude}, {longitude}), состояние: {current_state}"
+                )
+
 
 if __name__ == "__main__":
     asyncio.run(main())
