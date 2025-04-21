@@ -1,11 +1,11 @@
 import asyncio
 import logging
-import aiosqlite
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, BotCommand
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.client.default import DefaultBotProperties
 from src.config.config import settings
 from src.services.geo import GeoService
 from src.services.topic import TopicService
@@ -18,13 +18,14 @@ from src.repositories.subscription import SubscriptionRepository
 from src.repositories.spot import SpotRepository
 from src.repositories.checkin import CheckinRepository
 from src.models.user import User
-from src.models.spot import Spot, SpotWithDistance
 from src.keyboards.main import MainKeyboards
+import aiosqlite
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
-logger.info("Инициализация модуля bot.py")
 
 
 class CheckinStates(StatesGroup):
@@ -56,33 +57,54 @@ class ActivityStates(StatesGroup):
 
 
 async def main():
-    """Запуск бота."""
-    bot = Bot(token=settings.BOT_TOKEN)
+    """Инициализация и запуск бота."""
+    logger.info("Инициализация модуля bot.py")
+    bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
 
-    # Инициализация БД
+    # Регистрация команд для меню Telegram
+    await bot.set_my_commands(
+        [
+            BotCommand(command="/start", description="Запустить бота"),
+            BotCommand(command="/checkin", description="Чек-ин на споте"),
+            BotCommand(command="/spots", description="Посмотреть ближайшие споты"),
+            BotCommand(command="/activity", description="Активность на спотах"),
+            BotCommand(command="/add_spot", description="Добавить новый спот"),
+            BotCommand(command="/subscribe", description="Подписаться на уведомления"),
+            BotCommand(command="/create_topic", description="Создать тему для спота"),
+            BotCommand(command="/test_notification", description="Тест уведомления"),
+            BotCommand(command="/test_chat", description="Тест сообщения в чат"),
+        ]
+    )
+
+    # Инициализация БД и сервисов
     async with aiosqlite.connect("data/database.db") as db:
-        # Инициализация сервисов
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
         checkin_repo = CheckinRepository(db)
-        geo_service = GeoService(bot)
+        geo_service = GeoService()
         topic_service = TopicService(bot, db)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
         chat_service = ChatService(bot, topic_service, notification_service)
-        spot_service = SpotService(spot_repo, geo_service)
+        spot_service = SpotService(spot_repo)
         weather_service = WeatherService()
-        checkin_service = CheckinService(
-            bot, checkin_repo, notification_service, spot_service
-        )
+        checkin_service = CheckinService(checkin_repo)
+
+        # Глобальный обработчик ошибок
+        @dp.error()
+        async def error_handler(update, exception):
+            """Обработка ошибок."""
+            logger.error(f"Ошибка при обработке обновления: {exception}")
+            return True
 
         # Хендлер для /start
         @dp.message(Command(commands=["start"]))
-        async def cmd_start(message: Message):
+        async def cmd_start(message: Message, state: FSMContext):
             """Обработка команды /start."""
             logger.info(f"Команда /start от пользователя {message.from_user.id}")
+            await state.clear()
             kb = MainKeyboards.get_main_menu()
             await message.answer(
                 "Добро пожаловать в WindSpotBot! 🏄‍♂️\n"
@@ -91,11 +113,11 @@ async def main():
             )
 
         # Хендлер для чек-ина
-        @dp.message(commands=["checkin"])
+        @dp.message(Command(commands=["checkin"]))
         async def cmd_checkin(message: Message, state: FSMContext):
             """Обработка команды /checkin."""
             logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
-            await state.clear()  # Сбрасываем состояние
+            await state.clear()
             cached_location = await geo_service.get_cached_location(
                 message.from_user.id
             )
@@ -131,7 +153,7 @@ async def main():
                 return
             if message.content_type == "location":
                 location = await geo_service.process_location(message, state)
-            else:  # venue
+            else:
                 latitude = message.venue.location.latitude
                 longitude = message.venue.location.longitude
                 await geo_service.cache_location(
@@ -200,17 +222,17 @@ async def main():
                 if not spot_id:
                     await callback.message.edit_text("Ошибка: спот не выбран.")
                     return
-                checkin_type = int(callback.data.split(":", 1)[1])
+                checkin_type = callback.data.split(":", 1)[1]
                 user = User(
                     id=callback.from_user.id,
                     name=callback.from_user.full_name,
                     username=callback.from_user.username,
                 )
-                success = await checkin_service.create_checkin(
+                checkin_id = await checkin_service.create_checkin(
                     user, spot_id, checkin_type, duration=3600
                 )
                 spot = await spot_service.get_spot_by_id(spot_id)
-                if success:
+                if checkin_id:
                     await callback.message.edit_text(
                         f"Чек-ин на споте '{spot.name}' успешно создан!"
                     )
@@ -226,11 +248,11 @@ async def main():
                 await state.clear()
 
         # Хендлер для просмотра активности
-        @dp.message(commands=["activity"])
+        @dp.message(Command(commands=["activity"]))
         async def cmd_activity(message: Message, state: FSMContext):
             """Обработка команды /activity."""
             logger.info(f"Команда /activity от пользователя {message.from_user.id}")
-            await state.clear()  # Сбрасываем состояние
+            await state.clear()
             cached_location = await geo_service.get_cached_location(
                 message.from_user.id
             )
@@ -263,7 +285,7 @@ async def main():
                 return
             if message.content_type == "location":
                 location = await geo_service.process_location(message, state)
-            else:  # venue
+            else:
                 latitude = message.venue.location.latitude
                 longitude = message.venue.location.longitude
                 await geo_service.cache_location(
@@ -282,7 +304,7 @@ async def main():
                     weather_service,
                     chat_service,
                 )
-                await state.clear()  # Сбрасываем состояние после обработки
+                await state.clear()
             else:
                 logger.error("Не удалось обработать геолокацию")
                 await message.answer("Ошибка при обработке геолокации.")
@@ -315,18 +337,9 @@ async def main():
                 )
                 weather_info = "Погода: нет данных"
                 if weather:
-                    wind_speed = (
-                        weather["wind_speed"]
-                        if weather["wind_speed"] is not None
-                        else "N/A"
-                    )
-                    water_temp = (
-                        weather["water_temperature"]
-                        if weather["water_temperature"] is not None
-                        else "N/A"
-                    )
+                    wind_speed = weather.get("wind_speed", "N/A")
+                    water_temp = weather.get("water_temperature", "N/A")
                     weather_info = f"Ветер: {wind_speed} м/с, Вода: {water_temp} °C"
-
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
                     f"На месте: {len(on_spot)} чел." if on_spot else "На месте: никого"
@@ -336,10 +349,8 @@ async def main():
                     if planning
                     else "Планируют: никого"
                 )
-
                 chat_link = await chat_service.get_chat_link(spot.name)
                 chat_info = f"Чат: {chat_link}" if chat_link else "Чат: не создан"
-
                 response += (
                     f"\n- {spot.name} ({spot_with_distance.distance:.1f} км)\n"
                     f"  {weather_info}\n"
@@ -350,11 +361,11 @@ async def main():
             await message.answer(response)
 
         # Хендлер для списка спотов
-        @dp.message(commands=["spots"])
+        @dp.message(Command(commands=["spots"]))
         async def cmd_spots(message: Message, state: FSMContext):
             """Обработка команды /spots."""
             logger.info(f"Команда /spots от пользователя {message.from_user.id}")
-            await state.clear()  # Сбрасываем состояние
+            await state.clear()
             cached_location = await geo_service.get_cached_location(
                 message.from_user.id
             )
@@ -389,7 +400,7 @@ async def main():
                 return
             if message.content_type == "location":
                 location = await geo_service.process_location(message, state)
-            else:  # venue
+            else:
                 latitude = message.venue.location.latitude
                 longitude = message.venue.location.longitude
                 await geo_service.cache_location(
@@ -410,16 +421,17 @@ async def main():
                     return
                 kb = MainKeyboards.get_spots_list(nearby_spots)
                 await message.answer("Ближайшие споты:", reply_markup=kb)
-                await state.clear()  # Сбрасываем состояние после обработки
+                await state.clear()
             else:
                 logger.error("Не удалось обработать геолокацию")
                 await message.answer("Ошибка при обработке геолокации.")
 
-        # Хендлер для /add_spot
+        # Хендлер для добавления спота
         @dp.message(Command(commands=["add_spot"]))
         async def cmd_add_spot(message: Message, state: FSMContext):
             """Начало процесса добавления спота."""
             logger.info(f"Команда /add_spot от пользователя {message.from_user.id}")
+            await state.clear()
             await message.answer("Введите название спота:")
             await state.set_state(AddSpotStates.entering_name)
 
@@ -452,7 +464,7 @@ async def main():
             if message.content_type == "location":
                 latitude = message.location.latitude
                 longitude = message.location.longitude
-            else:  # venue
+            else:
                 latitude = message.venue.location.latitude
                 longitude = message.venue.location.longitude
             logger.info(f"Получена геолокация спота: ({latitude}, {longitude})")
@@ -471,7 +483,7 @@ async def main():
             data = await state.get_data()
             description = None if message.text == "/skip" else message.text.strip()
             try:
-                spot_id, error = await spot_service.add_spot(
+                spot_id = await spot_service.add_spot(
                     name=data["name"],
                     latitude=data["latitude"],
                     longitude=data["longitude"],
@@ -481,7 +493,7 @@ async def main():
                 if spot_id:
                     await message.answer(f"Спот '{data['name']}' успешно добавлен!")
                 else:
-                    await message.answer(f"Ошибка: {error}")
+                    await message.answer("Ошибка при добавлении спота.")
                 await state.clear()
             except Exception as e:
                 logger.error(f"Ошибка при добавлении спота: {e}")
@@ -511,7 +523,7 @@ async def main():
                         f"Тема '{spot_name}' создана, thread_id: {thread_id}"
                     )
                 else:
-                    await message.answer(f"Ошибка при создания темы '{spot_name}'")
+                    await message.answer(f"Ошибка при создании темы '{spot_name}'")
             except Exception as e:
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
@@ -519,7 +531,7 @@ async def main():
         # Хендлер для подписки
         @dp.message(Command(commands=["subscribe"]))
         async def cmd_subscribe(message: Message):
-            """Тестовая подписка на события."""
+            """Подписка на события спота."""
             logger.info(f"Команда /subscribe от пользователя {message.from_user.id}")
             try:
                 parts = message.text.split(maxsplit=1)
@@ -534,10 +546,7 @@ async def main():
                         "Укажите название спота и тип события (checkin, message, weather)"
                     )
                     return
-                spot_name, event_type = command_args[0], command_args[1]
-                logger.info(
-                    f"Обработка подписки: spot_name='{spot_name}', event_type='{event_type}'"
-                )
+                spot_name, event_type = command_args
                 if event_type not in ["checkin", "message", "weather"]:
                     await message.answer(
                         "Неверный тип события. Допустимые значения: checkin, message, weather"
@@ -639,30 +648,7 @@ async def main():
                 logger.error(f"Ошибка в process_main_menu: {e}")
                 await callback.message.answer(f"Ошибка: {str(e)}")
 
-        # Временный хендлер для отладки всех сообщений
-        @dp.message()
-        async def debug_location(message: Message, state: FSMContext):
-            """Отладка всех входящих сообщений."""
-            current_state = await state.get_state()
-            logger.info(
-                f"Получено сообщение от {message.from_user.id}, content_type: {message.content_type}, state: {current_state}"
-            )
-            if message.content_type in ["location", "venue"]:
-                latitude = (
-                    message.location.latitude
-                    if message.content_type == "location"
-                    else message.venue.location.latitude
-                )
-                longitude = (
-                    message.location.longitude
-                    if message.content_type == "location"
-                    else message.venue.location.longitude
-                )
-                logger.info(f"Геолокация: ({latitude}, {longitude})")
-                await message.answer(
-                    f"Получена геолокация: ({latitude}, {longitude}), состояние: {current_state}"
-                )
-
+        # Запуск бота
         logger.info("Бот запущен")
         await dp.start_polling(bot)
 
