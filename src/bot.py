@@ -161,14 +161,14 @@ async def main():
                 logger.info(
                     f"Выбор спота: {callback.data} пользователем {callback.from_user.id}"
                 )
-                spot_name = callback.data.split(":", 1)[1]
-                spot = await spot_service.get_spot(spot_name)
+                spot_id = int(callback.data.split(":", 1)[1])
+                spot = await spot_service.get_spot_by_id(spot_id)
                 if not spot:
-                    await callback.message.edit_text(f"Спот '{spot_name}' не найден.")
+                    await callback.message.edit_text(f"Спот с ID {spot_id} не найден.")
                     return
                 kb = MainKeyboards.get_checkin_types()
                 await callback.message.edit_text(
-                    f"Вы выбрали спот '{spot_name}'. Тип чек-ина:", reply_markup=kb
+                    f"Вы выбрали спот '{spot.name}'. Тип чек-ина:", reply_markup=kb
                 )
                 await state.update_data(spot_id=spot.id)
                 await state.set_state(CheckinStates.selecting_type)

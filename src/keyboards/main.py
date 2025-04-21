@@ -91,7 +91,7 @@ class MainKeyboards:
                 [
                     InlineKeyboardButton(
                         text=f"{spot.name} ({distance})",
-                        callback_data=f"spot:{spot.name}",
+                        callback_data=f"spot:{spot.id}",
                     )
                 ]
             )
