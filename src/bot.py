@@ -91,36 +91,32 @@ async def main():
             )
 
         # Хендлер для чек-ина
-        @dp.message(Command(commands=["checkin"]))
+        @dp.message(commands=["checkin"])
         async def cmd_checkin(message: Message, state: FSMContext):
-            """Начало процесса чек-ина."""
+            """Обработка команды /checkin."""
             logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
-            try:
-                user_id = message.from_user.id
-                location = await geo_service.get_cached_location(user_id)
-                if location:
-                    logger.info(
-                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
+            await state.clear()  # Сбрасываем состояние
+            cached_location = await geo_service.get_cached_location(
+                message.from_user.id
+            )
+            if cached_location:
+                latitude, longitude = cached_location
+                logger.info(f"Использован кэш: ({latitude}, {longitude})")
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
+                    await message.answer(
+                        "Споты не найдены. Добавьте споты через /add_spot."
                     )
-                    latitude, longitude = location
-                    spots = await spot_service.get_all_spots()
-                    nearby_spots = await geo_service.get_nearby_spots(
-                        spots, latitude, longitude
-                    )
-                    if not nearby_spots:
-                        await message.answer(
-                            "Споты не найдены. Добавьте споты через /add_spot."
-                        )
-                        return
-                    kb = MainKeyboards.get_spots_list(nearby_spots)
-                    await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
-                    await state.set_state(CheckinStates.selecting_spot)
-                else:
-                    await geo_service.request_location(message, state)
-                    await state.set_state(CheckinStates.requesting_location)
-            except Exception as e:
-                logger.error(f"Ошибка в cmd_checkin: {e}")
-                await message.answer(f"Ошибка: {str(e)}")
+                    return
+                kb = MainKeyboards.get_spots_list(nearby_spots)
+                await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+                await state.set_state(CheckinStates.selecting_spot)
+            else:
+                await geo_service.request_location(message, state)
+                await state.set_state(CheckinStates.requesting_location)
 
         # Обработка геолокации для чек-ина
         @dp.message(CheckinStates.requesting_location)
@@ -142,7 +138,6 @@ async def main():
                     message.from_user.id, latitude, longitude
                 )
                 location = (latitude, longitude)
-                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
@@ -231,34 +226,29 @@ async def main():
                 await state.clear()
 
         # Хендлер для просмотра активности
-        @dp.message(Command(commands=["activity"]))
+        @dp.message(commands=["activity"])
         async def cmd_activity(message: Message, state: FSMContext):
-            """Просмотр активности на ближайших спотах."""
+            """Обработка команды /activity."""
             logger.info(f"Команда /activity от пользователя {message.from_user.id}")
-            try:
-                user_id = message.from_user.id
-                location = await geo_service.get_cached_location(user_id)
-                if location:
-                    logger.info(
-                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
-                    )
-                    latitude, longitude = location
-                    await show_activity(
-                        message,
-                        latitude,
-                        longitude,
-                        spot_service,
-                        checkin_service,
-                        weather_service,
-                        chat_service,
-                    )
-                    await state.clear()
-                else:
-                    await geo_service.request_location(message, state)
-                    await state.set_state(ActivityStates.requesting_location)
-            except Exception as e:
-                logger.error(f"Ошибка в cmd_activity: {e}")
-                await message.answer(f"Ошибка: {str(e)}")
+            await state.clear()  # Сбрасываем состояние
+            cached_location = await geo_service.get_cached_location(
+                message.from_user.id
+            )
+            if cached_location:
+                latitude, longitude = cached_location
+                logger.info(f"Использован кэш: ({latitude}, {longitude})")
+                await show_activity(
+                    message,
+                    latitude,
+                    longitude,
+                    spot_service,
+                    checkin_service,
+                    weather_service,
+                    chat_service,
+                )
+            else:
+                await geo_service.request_location(message, state)
+                await state.set_state(ActivityStates.requesting_location)
 
         # Обработка геолокации для активности
         @dp.message(ActivityStates.requesting_location)
@@ -280,7 +270,6 @@ async def main():
                     message.from_user.id, latitude, longitude
                 )
                 location = (latitude, longitude)
-                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
@@ -293,6 +282,7 @@ async def main():
                     weather_service,
                     chat_service,
                 )
+                await state.clear()  # Сбрасываем состояние после обработки
             else:
                 logger.error("Не удалось обработать геолокацию")
                 await message.answer("Ошибка при обработке геолокации.")
@@ -325,7 +315,17 @@ async def main():
                 )
                 weather_info = "Погода: нет данных"
                 if weather:
-                    weather_info = f"Ветер: {weather['wind_speed'] or 'N/A'} м/с, Вода: {weather['water_temperature'] or 'N/A'} °C"
+                    wind_speed = (
+                        weather["wind_speed"]
+                        if weather["wind_speed"] is not None
+                        else "N/A"
+                    )
+                    water_temp = (
+                        weather["water_temperature"]
+                        if weather["water_temperature"] is not None
+                        else "N/A"
+                    )
+                    weather_info = f"Ветер: {wind_speed} м/с, Вода: {water_temp} °C"
 
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
@@ -350,36 +350,31 @@ async def main():
             await message.answer(response)
 
         # Хендлер для списка спотов
-        @dp.message(Command(commands=["spots"]))
+        @dp.message(commands=["spots"])
         async def cmd_spots(message: Message, state: FSMContext):
-            """Запрос геолокации для отображения ближайших спотов."""
+            """Обработка команды /spots."""
             logger.info(f"Команда /spots от пользователя {message.from_user.id}")
-            try:
-                user_id = message.from_user.id
-                location = await geo_service.get_cached_location(user_id)
-                if location:
-                    logger.info(
-                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
+            await state.clear()  # Сбрасываем состояние
+            cached_location = await geo_service.get_cached_location(
+                message.from_user.id
+            )
+            if cached_location:
+                latitude, longitude = cached_location
+                logger.info(f"Использован кэш: ({latitude}, {longitude})")
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
+                    await message.answer(
+                        "Споты не найдены. Добавьте споты через /add_spot."
                     )
-                    latitude, longitude = location
-                    spots = await spot_service.get_all_spots()
-                    nearby_spots = await geo_service.get_nearby_spots(
-                        spots, latitude, longitude
-                    )
-                    if not nearby_spots:
-                        await message.answer(
-                            "Споты не найдены. Добавьте споты через /add_spot."
-                        )
-                        return
-                    kb = MainKeyboards.get_spots_list(nearby_spots)
-                    await message.answer("Ближайшие споты:", reply_markup=kb)
-                    await state.clear()
-                else:
-                    await geo_service.request_location(message, state)
-                    await state.set_state(SpotsStates.requesting_location)
-            except Exception as e:
-                logger.error(f"Ошибка в cmd_spots: {e}")
-                await message.answer(f"Ошибка: {str(e)}")
+                    return
+                kb = MainKeyboards.get_spots_list(nearby_spots)
+                await message.answer("Ближайшие споты:", reply_markup=kb)
+            else:
+                await geo_service.request_location(message, state)
+                await state.set_state(SpotsStates.requesting_location)
 
         # Обработка геолокации для спотов
         @dp.message(SpotsStates.requesting_location)
@@ -401,7 +396,6 @@ async def main():
                     message.from_user.id, latitude, longitude
                 )
                 location = (latitude, longitude)
-                await state.clear()
             if location:
                 latitude, longitude = location
                 logger.info(f"Получена геолокация: ({latitude}, {longitude})")
@@ -416,6 +410,7 @@ async def main():
                     return
                 kb = MainKeyboards.get_spots_list(nearby_spots)
                 await message.answer("Ближайшие споты:", reply_markup=kb)
+                await state.clear()  # Сбрасываем состояние после обработки
             else:
                 logger.error("Не удалось обработать геолокацию")
                 await message.answer("Ошибка при обработке геолокации.")
