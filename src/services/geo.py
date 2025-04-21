@@ -20,6 +20,9 @@ class GeoService:
         self, message: Message, state: FSMContext
     ) -> Optional[Tuple[float, float]]:
         """Запрос геолокации пользователя."""
+        logger.info(
+            f"Запрос геолокации для пользователя {message.from_user.id}, текущее состояние: {await state.get_state()}"
+        )
         try:
             logger.info(f"Запрос геолокации для пользователя {message.from_user.id}")
             await message.answer("Отправьте вашу геолокацию:")
@@ -32,6 +35,9 @@ class GeoService:
         self, message: Message, state: FSMContext
     ) -> Optional[Tuple[float, float]]:
         """Обработка полученной геолокации."""
+        logger.info(
+            f"Обработка геолокации от пользователя {message.from_user.id}, состояние: {await state.get_state()}"
+        )
         try:
             logger.info(f"Обработка геолокации от пользователя {message.from_user.id}")
             if not message.location:
