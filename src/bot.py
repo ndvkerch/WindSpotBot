@@ -18,6 +18,7 @@ from src.repositories.subscription import SubscriptionRepository
 from src.repositories.spot import SpotRepository
 from src.repositories.checkin import CheckinRepository
 from src.models.user import User
+from src.models.spot import Spot, SpotWithDistance
 from src.keyboards.main import MainKeyboards
 
 # Настройка логирования
@@ -317,8 +318,8 @@ async def main():
                 await message.answer("Активные споты не найдены.")
                 return
             response = "Активность на спотах:\n"
-            for spot in nearby_spots:
-                # Погода
+            for spot_with_distance in nearby_spots:
+                spot = spot_with_distance.spot
                 weather = await weather_service.get_weather(
                     spot.latitude, spot.longitude
                 )
@@ -326,7 +327,6 @@ async def main():
                 if weather:
                     weather_info = f"Ветер: {weather['wind_speed'] or 'N/A'} м/с, Вода: {weather['water_temperature'] or 'N/A'} °C"
 
-                # Пользователи
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
                     f"На месте: {len(on_spot)} чел." if on_spot else "На месте: никого"
@@ -337,12 +337,11 @@ async def main():
                     else "Планируют: никого"
                 )
 
-                # Чат
                 chat_link = await chat_service.get_chat_link(spot.name)
                 chat_info = f"Чат: {chat_link}" if chat_link else "Чат: не создан"
 
                 response += (
-                    f"\n- {spot.name} ({spot.distance:.1f} км)\n"
+                    f"\n- {spot.name} ({spot_with_distance.distance:.1f} км)\n"
                     f"  {weather_info}\n"
                     f"  {on_spot_info}\n"
                     f"  {planning_info}\n"
