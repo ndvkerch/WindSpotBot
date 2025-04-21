@@ -1,19 +1,12 @@
 from aiogram import Bot
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from src.models.spot import Spot
 from src.config.config import settings
 import logging
 import math
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
-
-
-class GeoStates(StatesGroup):
-    """Состояния для запроса геолокации."""
-
-    requesting_location = State()
 
 
 class GeoService:
@@ -28,11 +21,11 @@ class GeoService:
     ) -> Optional[Tuple[float, float]]:
         """Запрос геолокации пользователя."""
         try:
+            logger.info(f"Запрос геолокации для пользователя {message.from_user.id}")
             await message.answer("Отправьте вашу геолокацию:")
-            await state.set_state(GeoStates.requesting_location)
             return None
         except Exception as e:
-            logging.error(f"Ошибка при запросе геолокации: {e}")
+            logger.error(f"Ошибка при запросе геолокации: {e}")
             return None
 
     async def process_location(
@@ -40,35 +33,42 @@ class GeoService:
     ) -> Optional[Tuple[float, float]]:
         """Обработка полученной геолокации."""
         try:
+            logger.info(f"Обработка геолокации от пользователя {message.from_user.id}")
             if not message.location:
+                logger.warning("Сообщение не содержит геолокацию")
                 await message.answer("Пожалуйста, отправьте геолокацию.")
                 return None
             latitude = message.location.latitude
             longitude = message.location.longitude
             await self.cache_location(message.from_user.id, latitude, longitude)
             await state.clear()
+            logger.info(f"Геолокация обработана: ({latitude}, {longitude})")
             return latitude, longitude
         except Exception as e:
-            logging.error(f"Ошибка при обработке геолокации: {e}")
+            logger.error(f"Ошибка при обработке геолокации: {e}")
             await message.answer(f"Ошибка: {str(e)}")
             return None
 
     async def get_cached_location(self, user_id: int) -> Optional[Tuple[float, float]]:
         """Получение кэшированных координат."""
+        logger.info(f"Проверка кэша геолокации для пользователя {user_id}")
         if user_id in self.cache:
             latitude, longitude, timestamp = self.cache[user_id]
             if datetime.utcnow() < timestamp + timedelta(
                 seconds=settings.STATS_CACHE_TTL_SECONDS
             ):
+                logger.info(f"Кэш валиден: ({latitude}, {longitude})")
                 return latitude, longitude
             else:
+                logger.info("Кэш устарел, удаление")
                 del self.cache[user_id]
+        logger.info("Кэш пуст")
         return None
 
     async def cache_location(self, user_id: int, latitude: float, longitude: float):
         """Кэширование координат."""
         self.cache[user_id] = (latitude, longitude, datetime.utcnow())
-        logging.info(
+        logger.info(
             f"Кэшированы координаты для пользователя {user_id}: ({latitude}, {longitude})"
         )
 
@@ -76,6 +76,7 @@ class GeoService:
         self, lat1: float, lon1: float, lat2: float, lon2: float
     ) -> float:
         """Вычисление расстояния между двумя точками (в км)."""
+        logger.debug(f"Вычисление расстояния между ({lat1}, {lon1}) и ({lat2}, {lon2})")
         R = 6371  # Радиус Земли в км
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
@@ -83,14 +84,18 @@ class GeoService:
             math.radians(lat1)
         ) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) * math.sin(dlon / 2)
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
+        distance = R * c
+        logger.debug(f"Расстояние: {distance} км")
+        return distance
 
     async def get_nearby_spots(
         self, spots: List[Spot], latitude: float, longitude: float
     ) -> List[Spot]:
         """Получение ближайших спотов."""
         try:
+            logger.info(f"Получение ближайших спотов для ({latitude}, {longitude})")
             if not spots:
+                logger.warning("Список спотов пуст")
                 return []
             # Добавляем расстояние к спотам
             for spot in spots:
@@ -98,9 +103,11 @@ class GeoService:
                     latitude, longitude, spot.latitude, spot.longitude
                 )
             # Сортируем и ограничиваем
-            return sorted(spots, key=lambda x: x.distance)[
+            nearby = sorted(spots, key=lambda x: x.distance)[
                 : settings.NEARBY_SPOTS_LIMIT
             ]
+            logger.info(f"Найдено {len(nearby)} ближайших спотов")
+            return nearby
         except Exception as e:
-            logging.error(f"Ошибка при получении ближайших спотов: {e}")
+            logger.error(f"Ошибка при получении ближайших спотов: {e}")
             return []
