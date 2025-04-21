@@ -82,15 +82,17 @@ async def main():
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
         checkin_repo = CheckinRepository(db)
-        geo_service = GeoService()
+        geo_service = GeoService(bot)
         topic_service = TopicService(bot, db)
         notification_service = NotificationService(
             bot, topic_service, subscription_repo
         )
         chat_service = ChatService(bot, topic_service, notification_service)
-        spot_service = SpotService(spot_repo)
+        spot_service = SpotService(spot_repo, geo_service)
         weather_service = WeatherService()
-        checkin_service = CheckinService(checkin_repo)
+        checkin_service = CheckinService(
+            checkin_repo, notification_service, spot_service, bot
+        )
 
         # Глобальный обработчик ошибок
         @dp.error()
