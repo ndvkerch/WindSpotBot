@@ -2,17 +2,18 @@ import asyncio
 import logging
 import aiosqlite
 from aiogram import Bot, Dispatcher
-from aiogram.filters import Command, ContentTypeFilter
-from aiogram.types import Message, ContentType
+from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.config.config import settings
-from src.services.geo import GeoService, GeoStates
+from src.services.geo import GeoService
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
 from src.services.chat import ChatService
 from src.services.spot import SpotService
 from src.services.checkin import CheckinService
+from src.services.weather import WeatherService
 from src.repositories.subscription import SubscriptionRepository
 from src.repositories.spot import SpotRepository
 from src.repositories.checkin import CheckinRepository
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 class CheckinStates(StatesGroup):
     """Состояния для процесса чек-ина."""
 
+    requesting_location = State()
     selecting_spot = State()
     selecting_type = State()
 
@@ -38,10 +40,16 @@ class AddSpotStates(StatesGroup):
     entering_description = State()
 
 
+class SpotsStates(StatesGroup):
+    """Состояния для просмотра спотов."""
+
+    requesting_location = State()
+
+
 class ActivityStates(StatesGroup):
     """Состояния для просмотра активности."""
 
-    viewing_activity = State()
+    requesting_location = State()
 
 
 async def main():
@@ -71,6 +79,7 @@ async def main():
         @dp.message(Command(commands=["start"]))
         async def cmd_start(message: Message):
             """Обработка команды /start."""
+            logger.info(f"Команда /start от пользователя {message.from_user.id}")
             kb = MainKeyboards.get_main_menu()
             await message.answer(
                 "Добро пожаловать в WindSpotBot! 🏄‍♂️\n"
@@ -83,9 +92,13 @@ async def main():
         async def cmd_checkin(message: Message, state: FSMContext):
             """Начало процесса чек-ина."""
             try:
+                logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
+                    logger.info(
+                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
+                    )
                     latitude, longitude = location
                     spots = await spot_service.get_all_spots()
                     nearby_spots = await geo_service.get_nearby_spots(
@@ -101,20 +114,26 @@ async def main():
                     await state.set_state(CheckinStates.selecting_spot)
                 else:
                     await geo_service.request_location(message, state)
+                    await state.set_state(CheckinStates.requesting_location)
             except Exception as e:
                 logger.error(f"Ошибка в cmd_checkin: {e}")
                 await message.answer(f"Ошибка: {str(e)}")
 
         # Обработка геолокации для чек-ина
-        @dp.message(
-            GeoStates.requesting_location,
-            ContentTypeFilter(content_types=ContentType.LOCATION),
-        )
+        @dp.message(CheckinStates.requesting_location)
         async def process_checkin_location(message: Message, state: FSMContext):
             """Обработка геолокации для чек-ина."""
+            logger.info(
+                f"Обработка геолокации для чек-ина от пользователя {message.from_user.id}"
+            )
+            if message.content_type != "location":
+                logger.warning(f"Получен неверный тип контента: {message.content_type}")
+                await message.answer("Пожалуйста, отправьте геолокацию.")
+                return
             location = await geo_service.process_location(message, state)
             if location:
                 latitude, longitude = location
+                logger.info(f"Получена геолокация: ({latitude}, {longitude})")
                 spots = await spot_service.get_all_spots()
                 nearby_spots = await geo_service.get_nearby_spots(
                     spots, latitude, longitude
@@ -127,15 +146,21 @@ async def main():
                 kb = MainKeyboards.get_spots_list(nearby_spots)
                 await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
                 await state.set_state(CheckinStates.selecting_spot)
+            else:
+                logger.error("Не удалось обработать геолокацию")
+                await message.answer("Ошибка при обработке геолокации.")
 
         # Выбор спота для чек-ина
-        @dp.message(
+        @dp.callback_query(
             lambda c: c.data and c.data.startswith("spot:"),
             CheckinStates.selecting_spot,
         )
-        async def callback_spot(callback: types.CallbackQuery, state: FSMContext):
+        async def callback_spot(callback: CallbackQuery, state: FSMContext):
             """Обработка выбора спота."""
             try:
+                logger.info(
+                    f"Выбор спота: {callback.data} пользователем {callback.from_user.id}"
+                )
                 spot_name = callback.data.split(":", 1)[1]
                 spot = await spot_service.get_spot(spot_name)
                 if not spot:
@@ -153,13 +178,16 @@ async def main():
                 await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
 
         # Выбор типа чек-ина
-        @dp.message(
+        @dp.callback_query(
             lambda c: c.data and c.data.startswith("checkin:"),
             CheckinStates.selecting_type,
         )
-        async def callback_checkin(callback: types.CallbackQuery, state: FSMContext):
+        async def callback_checkin(callback: CallbackQuery, state: FSMContext):
             """Обработка чек-ина."""
             try:
+                logger.info(
+                    f"Выбор типа чек-ина: {callback.data} пользователем {callback.from_user.id}"
+                )
                 data = await state.get_data()
                 spot_id = data.get("spot_id")
                 if not spot_id:
@@ -195,9 +223,13 @@ async def main():
         async def cmd_activity(message: Message, state: FSMContext):
             """Просмотр активности на ближайших спотах."""
             try:
+                logger.info(f"Команда /activity от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
+                    logger.info(
+                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
+                    )
                     latitude, longitude = location
                     await show_activity(
                         message,
@@ -211,20 +243,26 @@ async def main():
                     await state.clear()
                 else:
                     await geo_service.request_location(message, state)
+                    await state.set_state(ActivityStates.requesting_location)
             except Exception as e:
                 logger.error(f"Ошибка в cmd_activity: {e}")
                 await message.answer(f"Ошибка: {str(e)}")
 
         # Обработка геолокации для активности
-        @dp.message(
-            GeoStates.requesting_location,
-            ContentTypeFilter(content_types=ContentType.LOCATION),
-        )
+        @dp.message(ActivityStates.requesting_location)
         async def process_activity_location(message: Message, state: FSMContext):
             """Обработка геолокации для активности."""
+            logger.info(
+                f"Обработка геолокации для активности от пользователя {message.from_user.id}"
+            )
+            if message.content_type != "location":
+                logger.warning(f"Получен неверный тип контента: {message.content_type}")
+                await message.answer("Пожалуйста, отправьте геолокацию.")
+                return
             location = await geo_service.process_location(message, state)
             if location:
                 latitude, longitude = location
+                logger.info(f"Получена геолокация: ({latitude}, {longitude})")
                 await show_activity(
                     message,
                     latitude,
@@ -234,6 +272,9 @@ async def main():
                     weather_service,
                     chat_service,
                 )
+            else:
+                logger.error("Не удалось обработать геолокацию")
+                await message.answer("Ошибка при обработке геолокации.")
 
         async def show_activity(
             message: Message,
@@ -245,6 +286,9 @@ async def main():
             chat_service: ChatService,
         ):
             """Отображение активности на спотах."""
+            logger.info(
+                f"Отображение активности для пользователя {message.from_user.id}"
+            )
             spots = await spot_service.get_all_spots()
             nearby_spots = await geo_service.get_nearby_spots(
                 spots, latitude, longitude
@@ -291,9 +335,13 @@ async def main():
         async def cmd_spots(message: Message, state: FSMContext):
             """Запрос геолокации для отображения ближайших спотов."""
             try:
+                logger.info(f"Команда /spots от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
+                    logger.info(
+                        f"Используется кэшированная геолокация для пользователя {user_id}: {location}"
+                    )
                     latitude, longitude = location
                     spots = await spot_service.get_all_spots()
                     nearby_spots = await geo_service.get_nearby_spots(
@@ -309,20 +357,26 @@ async def main():
                     await state.clear()
                 else:
                     await geo_service.request_location(message, state)
+                    await state.set_state(SpotsStates.requesting_location)
             except Exception as e:
                 logger.error(f"Ошибка в cmd_spots: {e}")
                 await message.answer(f"Ошибка: {str(e)}")
 
         # Обработка геолокации для спотов
-        @dp.message(
-            GeoStates.requesting_location,
-            ContentTypeFilter(content_types=ContentType.LOCATION),
-        )
+        @dp.message(SpotsStates.requesting_location)
         async def process_spots_location(message: Message, state: FSMContext):
             """Обработка геолокации и отображение ближайших спотов."""
+            logger.info(
+                f"Обработка геолокации для спотов от пользователя {message.from_user.id}"
+            )
+            if message.content_type != "location":
+                logger.warning(f"Получен неверный тип контента: {message.content_type}")
+                await message.answer("Пожалуйста, отправьте геолокацию.")
+                return
             location = await geo_service.process_location(message, state)
             if location:
                 latitude, longitude = location
+                logger.info(f"Получена геолокация: ({latitude}, {longitude})")
                 spots = await spot_service.get_all_spots()
                 nearby_spots = await geo_service.get_nearby_spots(
                     spots, latitude, longitude
@@ -334,17 +388,24 @@ async def main():
                     return
                 kb = MainKeyboards.get_spots_list(nearby_spots)
                 await message.answer("Ближайшие споты:", reply_markup=kb)
+            else:
+                logger.error("Не удалось обработать геолокацию")
+                await message.answer("Ошибка при обработке геолокации.")
 
         # Хендлер для /add_spot
         @dp.message(Command(commands=["add_spot"]))
         async def cmd_add_spot(message: Message, state: FSMContext):
             """Начало процесса добавления спота."""
+            logger.info(f"Команда /add_spot от пользователя {message.from_user.id}")
             await message.answer("Введите название спота:")
             await state.set_state(AddSpotStates.entering_name)
 
         @dp.message(AddSpotStates.entering_name)
         async def process_spot_name(message: Message, state: FSMContext):
             """Обработка названия спота."""
+            logger.info(
+                f"Обработка названия спота от пользователя {message.from_user.id}"
+            )
             name = message.text.strip()
             if not name:
                 await message.answer("Название не может быть пустым. Попробуйте снова:")
@@ -355,17 +416,19 @@ async def main():
             )
             await state.set_state(AddSpotStates.entering_location)
 
-        @dp.message(
-            AddSpotStates.entering_location,
-            ContentTypeFilter(content_types=ContentType.LOCATION),
-        )
+        @dp.message(AddSpotStates.entering_location)
         async def process_spot_location(message: Message, state: FSMContext):
             """Обработка геолокации спота."""
-            if not message.location:
+            logger.info(
+                f"Обработка геолокации спота от пользователя {message.from_user.id}"
+            )
+            if message.content_type != "location":
+                logger.warning(f"Получен неверный тип контента: {message.content_type}")
                 await message.answer("Пожалуйста, отправьте геолокацию.")
                 return
             latitude = message.location.latitude
             longitude = message.location.longitude
+            logger.info(f"Получена геолокация спота: ({latitude}, {longitude})")
             await state.update_data(latitude=latitude, longitude=longitude)
             await message.answer(
                 "Введите описание спота (или отправьте /skip, чтобы пропустить):"
@@ -375,6 +438,9 @@ async def main():
         @dp.message(AddSpotStates.entering_description)
         async def process_spot_description(message: Message, state: FSMContext):
             """Обработка описания спота."""
+            logger.info(
+                f"Обработка описания спота от пользователя {message.from_user.id}"
+            )
             data = await state.get_data()
             description = None if message.text == "/skip" else message.text.strip()
             try:
@@ -400,6 +466,9 @@ async def main():
         async def cmd_create_topic(message: Message):
             """Создание темы для спота."""
             try:
+                logger.info(
+                    f"Команда /create_topic от пользователя {message.from_user.id}"
+                )
                 chat_member = await bot.get_chat_member(settings.CHAT_ID, bot.id)
                 if not chat_member.can_manage_topics:
                     await message.answer(
@@ -427,6 +496,9 @@ async def main():
         async def cmd_subscribe(message: Message):
             """Тестовая подписка на события."""
             try:
+                logger.info(
+                    f"Команда /subscribe от пользователя {message.from_user.id}"
+                )
                 parts = message.text.split(maxsplit=1)
                 if len(parts) < 2:
                     await message.answer(
@@ -463,6 +535,9 @@ async def main():
         async def cmd_test_notification(message: Message):
             """Тест отправки уведомления."""
             try:
+                logger.info(
+                    f"Команда /test_notification от пользователя {message.from_user.id}"
+                )
                 parts = message.text.split(maxsplit=2)
                 if len(parts) < 3:
                     await message.answer(
@@ -499,6 +574,9 @@ async def main():
         async def cmd_test_chat(message: Message):
             """Тест отправки сообщения в тему."""
             try:
+                logger.info(
+                    f"Команда /test_chat от пользователя {message.from_user.id}"
+                )
                 spot_name = (
                     message.text.split(maxsplit=1)[1]
                     if len(message.text.split()) > 1
