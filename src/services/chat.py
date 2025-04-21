@@ -55,12 +55,16 @@ class ChatService:
             return None
 
     async def get_chat_link(self, spot_name: str) -> Optional[str]:
-        """Получение ссылки на чат спота."""
+        """Получение ссылки на чат спота, создание темы при необходимости."""
         try:
             thread_id = await self.topic_service.get_topic_id(spot_name)
             if not thread_id:
-                logger.warning(f"Тема '{spot_name}' не найдена")
-                return None
+                logger.info(f"Тема '{spot_name}' не найдена, создаём новую")
+                thread_id = await self.topic_service.create_topic(spot_name)
+                if not thread_id:
+                    logger.error(f"Не удалось создать тему для спота '{spot_name}'")
+                    return None
+                logger.info(f"Тема '{spot_name}' создана, thread_id: {thread_id}")
             chat = await self.bot.get_chat(settings.CHAT_ID)
             return f"https://t.me/{chat.username}/{thread_id}"
         except Exception as e:
