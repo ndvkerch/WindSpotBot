@@ -53,6 +53,18 @@ class ChatService:
             logging.error(f"Ошибка при отправке сообщения в тему '{spot_name}': {e}")
             return None
 
+    async def get_chat_link(self, spot_name: str) -> Optional[str]:
+        """Получение ссылки на чат спота."""
+        try:
+            thread_id = await self.topic_service.get_topic_id(spot_name)
+            if not thread_id:
+                return None
+            chat = await self.bot.get_chat(self.topic_service.chat_id)
+            return f"https://t.me/{chat.username}/{thread_id}"
+        except Exception as e:
+            logging.error(f"Ошибка при получении ссылки на чат '{spot_name}': {e}")
+            return None
+
     async def get_spot_messages(self, spot_name: str, limit: int = 10) -> List[dict]:
         """Получение последних сообщений из темы спота (заглушка)."""
         thread_id = await self.topic_service.get_topic_id(spot_name)
