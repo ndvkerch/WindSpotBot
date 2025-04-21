@@ -95,8 +95,8 @@ async def main():
         @dp.message(Command(commands=["checkin"]))
         async def cmd_checkin(message: Message, state: FSMContext):
             """Начало процесса чек-ина."""
+            logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
             try:
-                logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
@@ -226,8 +226,8 @@ async def main():
         @dp.message(Command(commands=["activity"]))
         async def cmd_activity(message: Message, state: FSMContext):
             """Просмотр активности на ближайших спотах."""
+            logger.info(f"Команда /activity от пользователя {message.from_user.id}")
             try:
-                logger.info(f"Команда /activity от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
@@ -338,8 +338,8 @@ async def main():
         @dp.message(Command(commands=["spots"]))
         async def cmd_spots(message: Message, state: FSMContext):
             """Запрос геолокации для отображения ближайших спотов."""
+            logger.info(f"Команда /spots от пользователя {message.from_user.id}")
             try:
-                logger.info(f"Команда /spots от пользователя {message.from_user.id}")
                 user_id = message.from_user.id
                 location = await geo_service.get_cached_location(user_id)
                 if location:
@@ -599,8 +599,7 @@ async def main():
                 logger.error(f"Ошибка в cmd_test_chat: {e}")
                 await message.answer(f"Не удалось отправить сообщение: {e}")
 
-                # Хендлер для кнопок главного меню
-
+        # Хендлер для кнопок главного меню
         @dp.callback_query(
             lambda c: c.data in ["checkin", "spots", "activity", "add_spot"]
         )
