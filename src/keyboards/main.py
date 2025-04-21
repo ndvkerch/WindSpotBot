@@ -4,7 +4,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
-from src.models.spot import Spot
+from src.models.spot import Spot, SpotWithDistance
 from typing import List
 import logging
 
@@ -81,12 +81,13 @@ class MainKeyboards:
         return kb
 
     @staticmethod
-    def get_spots_list(spots: List[Spot]) -> InlineKeyboardMarkup:
+    def get_spots_list(spots: List[SpotWithDistance]) -> InlineKeyboardMarkup:
         """Получение списка спотов."""
         logger.info(f"Создание клавиатуры для {len(spots)} спотов")
         inline_keyboard = []
-        for spot in spots:
-            distance = f"{spot.distance:.1f} км" if hasattr(spot, "distance") else "N/A"
+        for spot_with_distance in spots:
+            spot = spot_with_distance.spot
+            distance = f"{spot_with_distance.distance:.1f} км"
             inline_keyboard.append(
                 [
                     InlineKeyboardButton(
