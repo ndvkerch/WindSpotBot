@@ -5,6 +5,8 @@ from src.services.geo import GeoService
 from src.config.config import settings
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 class SpotService:
     """Сервис для работы со спотами."""
@@ -22,6 +24,9 @@ class SpotService:
         description: Optional[str] = None,
     ) -> Tuple[Optional[int], Optional[str]]:
         """Добавление спота, возвращает ID и сообщение об ошибке (если есть)."""
+        logger.info(
+            f"Добавление спота '{name}' с координатами ({latitude}, {longitude})"
+        )
         try:
             # Проверка на близость к существующим спотам
             spots = await self.spot_repo.get_all()
@@ -33,6 +38,9 @@ class SpotService:
                     * 1000
                 )  # в метрах
                 if distance < settings.MIN_SPOT_DISTANCE_M:
+                    logger.warning(
+                        f"Спот '{name}' слишком близко к '{spot.name}' ({distance*1000:.1f} м)"
+                    )
                     return (
                         None,
                         f"Спот слишком близко к '{spot.name}' ({distance:.1f} м). Используйте существующий спот.",
@@ -57,12 +65,15 @@ class SpotService:
 
     async def get_spot(self, name: str) -> Optional[Spot]:
         """Получение спота по имени."""
+        logger.info(f"Получение спота по имени '{name}'")
         return await self.spot_repo.get_by_name(name)
 
     async def get_spot_by_id(self, spot_id: int) -> Optional[Spot]:
         """Получение спота по ID."""
+        logger.info(f"Получение спота по ID {spot_id}")
         return await self.spot_repo.get_by_id(spot_id)
 
     async def get_all_spots(self) -> List[Spot]:
         """Получение всех спотов."""
+        logger.info("Получение всех спотов")
         return await self.spot_repo.get_all()
