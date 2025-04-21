@@ -15,6 +15,7 @@ class SpotService:
         name: str,
         latitude: float,
         longitude: float,
+        created_by: int,
         description: Optional[str] = None,
     ) -> Optional[int]:
         """Добавление спота, возвращает ID."""
@@ -25,9 +26,12 @@ class SpotService:
                 latitude=latitude,
                 longitude=longitude,
                 description=description,
-            )  # id=0, так как автоинкремент
+                created_by=created_by,
+            )
             spot_id = await self.spot_repo.create(spot)
-            logging.info(f"Спот '{name}' добавлен, id: {spot_id}")
+            logging.info(
+                f"Спот '{name}' добавлен пользователем {created_by}, id: {spot_id}"
+            )
             return spot_id
         except Exception as e:
             logging.error(f"Ошибка при добавлении спота '{name}': {e}")
