@@ -19,7 +19,7 @@ class WeatherService:
             marine_params = {
                 "latitude": latitude,
                 "longitude": longitude,
-                "hourly": "water_temperature",
+                "daily": "water_temperature",
             }
             # Запрос к weather-api для wind_speed_10m
             weather_params = {
@@ -51,7 +51,7 @@ class WeatherService:
                     weather_data = await weather_response.json()
 
             # Обработка данных
-            marine_latest = marine_data.get("hourly", {})
+            marine_latest = marine_data.get("daily", {})
             weather_latest = weather_data.get("hourly", {})
             water_temp = marine_latest.get("water_temperature", [None])[-1]
             wind_speed = weather_latest.get("wind_speed_10m", [None])[-1]
