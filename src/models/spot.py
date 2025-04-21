@@ -10,3 +10,4 @@ class Spot(BaseModel):
     latitude: float
     longitude: float
     description: Optional[str] = None
+    created_by: int
