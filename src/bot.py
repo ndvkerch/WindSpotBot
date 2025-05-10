@@ -393,7 +393,19 @@ async def main():
             if not nearby_spots:
                 await message.answer("Активные споты не найдены.")
                 return
-            for spot_with_distance in nearby_spots:
+            # Фильтрация спотов с активными чек-инами
+            active_spots = []
+            for spot_with_distance in nearby_spots[:10]:  # Ограничение до 10 спотов
+                spot = spot_with_distance.spot
+                on_spot, planning = await checkin_service.get_active_users(spot.id)
+                if on_spot or planning:
+                    active_spots.append(spot_with_distance)
+            if not active_spots:
+                await message.answer("Нет спотов с активностью поблизости.")
+                return
+            # Сохранение message_id для каждого спота
+            message_ids = []
+            for spot_with_distance in active_spots:
                 spot = spot_with_distance.spot
                 weather = await weather_service.get_weather(
                     spot.latitude, spot.longitude
@@ -436,22 +448,24 @@ async def main():
                     f"{planning_info}\n"
                     f"{chat_info}"
                 )
-                kb = MainKeyboards.get_refresh_button(spot.id)
-                await message.answer(response, reply_markup=kb)
+                sent_message = await message.answer(response)
+                message_ids.append((spot.id, sent_message.message_id))
+            # Сохранение message_ids в состоянии для обновления
+            await message.bot.get_state_data(
+                message.chat.id, message.from_user.id
+            ).update({"activity_message_ids": message_ids})
+            # Добавление кнопок управления
+            kb = MainKeyboards.get_activity_controls()
+            await message.answer("Управление активностью:", reply_markup=kb)
 
-        # Хендлер для кнопки "Обновить"
-        @dp.callback_query(lambda c: c.data and c.data.startswith("refresh_spot:"))
-        async def callback_refresh_spot(callback: CallbackQuery, state: FSMContext):
-            """Обработка нажатия на кнопку 'Обновить' для спота."""
+        # Хендлер для кнопки "Обновить всё"
+        @dp.callback_query(lambda c: c.data == "refresh_all")
+        async def callback_refresh_all(callback: CallbackQuery, state: FSMContext):
+            """Обработка нажатия на кнопку 'Обновить всё'."""
             logger.info(
-                f"Обработка refresh_spot: {callback.data} от пользователя {callback.from_user.id}"
+                f"Обработка refresh_all от пользователя {callback.from_user.id}"
             )
             try:
-                spot_id = int(callback.data.split(":", 1)[1])
-                spot = await spot_service.get_spot_by_id(spot_id)
-                if not spot:
-                    await callback.message.edit_text(f"Спот с ID {spot_id} не найден.")
-                    return
                 cached_location = await geo_service.get_cached_location(
                     callback.from_user.id
                 )
@@ -461,59 +475,126 @@ async def main():
                     )
                     return
                 latitude, longitude = cached_location
-                distance = geo_service.calculate_distance(
-                    latitude, longitude, spot.latitude, spot.longitude
+                state_data = await callback.bot.get_state_data(
+                    callback.message.chat.id, callback.from_user.id
                 )
-                weather = await weather_service.get_weather(
-                    spot.latitude, spot.longitude
+                message_ids = state_data.get("activity_message_ids", [])
+                if not message_ids:
+                    await callback.message.edit_text(
+                        "Нет данных для обновления. Выполните /activity заново."
+                    )
+                    return
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
                 )
-                weather_info = "🌫 Погода: нет данных"
-                if weather:
-                    wind_speed = weather.get("wind_speed", "N/A")
-                    wind_direction = (
-                        weather_service.wind_direction_to_text(
-                            weather.get("wind_direction")
+                active_spots = []
+                for spot_with_distance in nearby_spots[:10]:
+                    spot = spot_with_distance.spot
+                    on_spot, planning = await checkin_service.get_active_users(spot.id)
+                    if on_spot or planning:
+                        active_spots.append(spot_with_distance)
+                if not active_spots:
+                    await callback.message.edit_text(
+                        "Нет спотов с активностью поблизости."
+                    )
+                    return
+                new_message_ids = []
+                for spot_with_distance in active_spots:
+                    spot = spot_with_distance.spot
+                    # Отключение кэша для свежего запроса погоды
+                    weather = await weather_service.get_weather(
+                        spot.latitude, spot.longitude, force_refresh=True
+                    )
+                    weather_info = "🌫 Погода: нет данных"
+                    if weather:
+                        wind_speed = weather.get("wind_speed", "N/A")
+                        wind_direction = (
+                            weather_service.wind_direction_to_text(
+                                weather.get("wind_direction")
+                            )
+                            if weather.get("wind_direction") is not None
+                            else "N/A"
                         )
-                        if weather.get("wind_direction") is not None
-                        else "N/A"
+                        wind_gusts = weather.get("wind_gusts", "N/A")
+                        water_temp = weather.get("water_temperature", "N/A")
+                        weather_info = (
+                            f"🌬 Ветер: {wind_speed} м/с\n"
+                            f"🧭 Направление: {wind_direction}\n"
+                            f"💨 Порывы: {wind_gusts} м/с\n"
+                            f"🌊 Вода: {water_temp} °C"
+                        )
+                    on_spot, planning = await checkin_service.get_active_users(spot.id)
+                    on_spot_info = (
+                        f"🏄 На месте: {len(on_spot)} чел."
+                        if on_spot
+                        else "🏄 На месте: никого"
                     )
-                    wind_gusts = weather.get("wind_gusts", "N/A")
-                    water_temp = weather.get("water_temperature", "N/A")
-                    weather_info = (
-                        f"🌬 Ветер: {wind_speed} м/с\n"
-                        f"🧭 Направление: {wind_direction}\n"
-                        f"💨 Порывы: {wind_gusts} м/с\n"
-                        f"🌊 Вода: {water_temp} °C"
+                    planning_info = (
+                        f"⏳ Планируют: {len(planning)} чел."
+                        if planning
+                        else "⏳ Планируют: никого"
                     )
-                on_spot, planning = await checkin_service.get_active_users(spot.id)
-                on_spot_info = (
-                    f"🏄 На месте: {len(on_spot)} чел."
-                    if on_spot
-                    else "🏄 На месте: никого"
+                    chat_link = await chat_service.get_chat_link(spot.name)
+                    chat_info = (
+                        f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
+                    )
+                    response = (
+                        f"📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
+                        f"{weather_info}\n"
+                        f"{on_spot_info}\n"
+                        f"{planning_info}\n"
+                        f"{chat_info}"
+                    )
+                    # Поиск message_id для текущего спота
+                    message_id = next(
+                        (mid for sid, mid in message_ids if sid == spot.id), None
+                    )
+                    if message_id:
+                        try:
+                            await callback.message.bot.edit_message_text(
+                                text=response,
+                                chat_id=callback.message.chat.id,
+                                message_id=message_id,
+                            )
+                            new_message_ids.append((spot.id, message_id))
+                        except Exception as e:
+                            if "message is not modified" in str(e):
+                                new_message_ids.append((spot.id, message_id))
+                            else:
+                                logger.error(
+                                    f"Ошибка при обновлении сообщения для спота {spot.id}: {e}"
+                                )
+                    else:
+                        sent_message = await callback.message.answer(response)
+                        new_message_ids.append((spot.id, sent_message.message_id))
+                # Обновление message_ids в состоянии
+                await state.update_data(activity_message_ids=new_message_ids)
+                # Обновление клавиатуры управления
+                kb = MainKeyboards.get_activity_controls()
+                await callback.message.edit_text(
+                    "Управление активностью:", reply_markup=kb
                 )
-                planning_info = (
-                    f"⏳ Планируют: {len(planning)} чел."
-                    if planning
-                    else "⏳ Планируют: никого"
-                )
-                chat_link = await chat_service.get_chat_link(spot.name)
-                chat_info = f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
-                response = (
-                    f"📍 {spot.name} ({distance:.1f} км)\n"
-                    f"{weather_info}\n"
-                    f"{on_spot_info}\n"
-                    f"{planning_info}\n"
-                    f"{chat_info}"
-                )
-                kb = MainKeyboards.get_refresh_button(spot.id)
-                await callback.message.edit_text(response, reply_markup=kb)
                 await callback.answer()
             except Exception as e:
-                logger.error(f"Ошибка в callback_refresh_spot: {e}")
+                logger.error(f"Ошибка в callback_refresh_all: {e}")
                 await callback.message.edit_text(
-                    f"Ошибка при обновлении спота: {str(e)}"
+                    f"Ошибка при обновлении спотов: {str(e)}"
                 )
                 await callback.answer()
+
+        # Хендлер для кнопки "Обновить геопозицию"
+        @dp.callback_query(lambda c: c.data == "refresh_location")
+        async def callback_refresh_location(callback: CallbackQuery, state: FSMContext):
+            """Обработка нажатия на кнопку 'Обновить геопозицию'."""
+            logger.info(
+                f"Обработка refresh_location от пользователя {callback.from_user.id}"
+            )
+            await state.clear()
+            await geo_service.request_location(callback.message, state)
+            await state.set_state(ActivityStates.requesting_location)
+            await callback.message.edit_text("Пожалуйста, отправьте новую геолокацию.")
+            await callback.answer()
 
         # Хендлер для списка спотов
         @dp.message(Command(commands=["spots"]))
