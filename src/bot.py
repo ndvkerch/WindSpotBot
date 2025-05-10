@@ -91,7 +91,7 @@ async def main():
         spot_service = SpotService(spot_repo, geo_service)
         weather_service = WeatherService()
         checkin_service = CheckinService(
-            checkin_repo, notification_service, spot_service, bot
+            bot, checkin_repo, notification_service, spot_service
         )
 
         # Глобальный обработчик ошибок
@@ -116,13 +116,11 @@ async def main():
 
         # Хендлер для чек-ина
         @dp.message(Command(commands=["checkin"]))
-        async def cmd_checkin(message: Message, state: FSMContext):
+        async def cmd_checkin(message: Message, state: FSMContext, user_id: int):
             """Обработка команды /checkin."""
-            logger.info(f"Команда /checkin от пользователя {message.from_user.id}")
+            logger.info(f"Команда /checkin от пользователя {user_id}")
             await state.clear()
-            cached_location = await geo_service.get_cached_location(
-                message.from_user.id
-            )
+            cached_location = await geo_service.get_cached_location(user_id)
             if cached_location:
                 latitude, longitude = cached_location
                 logger.info(f"Использован кэш: ({latitude}, {longitude})")
@@ -250,14 +248,11 @@ async def main():
                 await state.clear()
 
         # Хендлер для просмотра активности
-        @dp.message(Command(commands=["activity"]))
-        async def cmd_activity(message: Message, state: FSMContext):
+        async def cmd_activity(message: Message, state: FSMContext, user_id: int):
             """Обработка команды /activity."""
-            logger.info(f"Команда /activity от пользователя {message.from_user.id}")
+            logger.info(f"Команда /activity от пользователя {user_id}")
             await state.clear()
-            cached_location = await geo_service.get_cached_location(
-                message.from_user.id
-            )
+            cached_location = await geo_service.get_cached_location(user_id)
             if cached_location:
                 latitude, longitude = cached_location
                 logger.info(f"Использован кэш: ({latitude}, {longitude})")
@@ -364,13 +359,11 @@ async def main():
 
         # Хендлер для списка спотов
         @dp.message(Command(commands=["spots"]))
-        async def cmd_spots(message: Message, state: FSMContext):
+        async def cmd_spots(message: Message, state: FSMContext, user_id: int):
             """Обработка команды /spots."""
-            logger.info(f"Команда /spots от пользователя {message.from_user.id}")
+            logger.info(f"Команда /spots от пользователя {user_id}")
             await state.clear()
-            cached_location = await geo_service.get_cached_location(
-                message.from_user.id
-            )
+            cached_location = await geo_service.get_cached_location(user_id)
             if cached_location:
                 latitude, longitude = cached_location
                 logger.info(f"Использован кэш: ({latitude}, {longitude})")
@@ -638,11 +631,17 @@ async def main():
             )
             try:
                 if callback.data == "checkin":
-                    await cmd_checkin(callback.message, state)
+                    await cmd_checkin(
+                        callback.message, state, user_id=callback.from_user.id
+                    )
                 elif callback.data == "spots":
-                    await cmd_spots(callback.message, state)
+                    await cmd_spots(
+                        callback.message, state, user_id=callback.from_user.id
+                    )
                 elif callback.data == "activity":
-                    await cmd_activity(callback.message, state)
+                    await cmd_activity(
+                        callback.message, state, user_id=callback.from_user.id
+                    )
                 elif callback.data == "add_spot":
                     await cmd_add_spot(callback.message, state)
                 await callback.answer()
