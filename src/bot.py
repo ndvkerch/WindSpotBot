@@ -398,12 +398,17 @@ async def main():
                 weather = await weather_service.get_weather(
                     spot.latitude, spot.longitude
                 )
-                weather_info = "Погода: нет данных"
+                weather_info = "🌫 Погода: нет данных"
                 if weather:
                     wind_speed = weather.get("wind_speed", "N/A")
+                    wind_direction = weather_service.wind_direction_to_text(
+                        weather.get("wind_direction")
+                    )
+                    wind_gusts = weather.get("wind_gusts", "N/A")
                     water_temp = weather.get("water_temperature", "N/A")
                     weather_info = (
-                        f"🌬 Ветер: {wind_speed} м/с, 🌊 Вода: {water_temp} °C"
+                        f"🌬 Ветер: {wind_speed} м/с ({wind_direction}), "
+                        f"Порывы: {wind_gusts} м/с, 🌊 Вода: {water_temp} °C"
                     )
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
