@@ -1,5 +1,5 @@
 from aiogram import Bot
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from src.models.spot import Spot, SpotWithDistance
 from src.config.config import settings
@@ -19,38 +19,54 @@ class GeoService:
         self.cache = {}  # Временный кеш: {user_id: (latitude, longitude, timestamp)}
 
     async def request_location(
-        self, message: Message, state: FSMContext
+        self, message: Message, state: FSMContext, user_id: int
     ) -> Optional[Tuple[float, float]]:
         """Запрос геолокации пользователя."""
         logger.info(
-            f"Запрос геолокации для пользователя {message.from_user.id}, текущее состояние: {await state.get_state()}"
+            f"Запрос геолокации для пользователя {user_id}, текущее состояние: {await state.get_state()}"
         )
         try:
-            await message.answer("Отправьте вашу геолокацию:")
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="Отправить геолокацию", request_location=True)]
+                ],
+                resize_keyboard=True,
+                one_time_keyboard=True,
+            )
+            await message.answer("Отправьте вашу геолокацию:", reply_markup=keyboard)
             return None
         except Exception as e:
-            logger.error(f"Ошибка при запросе геолокации: {e}")
+            logger.error(
+                f"Ошибка при запросе геолокации для пользователя {user_id}: {e}"
+            )
             return None
 
     async def process_location(
         self, message: Message, state: FSMContext
     ) -> Optional[Tuple[float, float]]:
         """Обработка полученной геолокации."""
+        user_id = message.from_user.id
         logger.info(
-            f"Обработка геолокации от пользователя {message.from_user.id}, состояние: {await state.get_state()}"
+            f"Обработка геолокации от пользователя {user_id}, состояние: {await state.get_state()}"
         )
         try:
             if not message.location:
-                logger.warning("Сообщение не содержит геолокацию")
+                logger.warning(
+                    f"Сообщение не содержит геолокацию для пользователя {user_id}"
+                )
                 await message.answer("Пожалуйста, отправьте геолокацию.")
                 return None
             latitude = message.location.latitude
             longitude = message.location.longitude
-            await self.cache_location(message.from_user.id, latitude, longitude)
-            logger.info(f"Геолокация обработана: ({latitude}, {longitude})")
+            await self.cache_location(user_id, latitude, longitude)
+            logger.info(
+                f"Геолокация обработана для пользователя {user_id}: ({latitude}, {longitude})"
+            )
             return latitude, longitude
         except Exception as e:
-            logger.error(f"Ошибка при обработке геолокации: {e}")
+            logger.error(
+                f"Ошибка при обработке геолокации для пользователя {user_id}: {e}"
+            )
             await message.answer(f"Ошибка: {str(e)}")
             return None
 
@@ -58,16 +74,18 @@ class GeoService:
         """Получение кэшированных координат."""
         logger.info(f"Проверка кэша геолокации для пользователя {user_id}")
         if user_id not in self.cache:
-            logger.info("Кэш пуст")
+            logger.info(f"Кэш пуст для пользователя {user_id}")
             return None
         latitude, longitude, timestamp = self.cache[user_id]
-        logger.debug(f"Найден кэш: ({latitude}, {longitude}), timestamp: {timestamp}")
+        logger.debug(
+            f"Найден кэш для пользователя {user_id}: ({latitude}, {longitude}), timestamp: {timestamp}"
+        )
         if datetime.utcnow() <= timestamp + timedelta(
             seconds=settings.STATS_CACHE_TTL_SECONDS
         ):
             logger.info(f"Кэш валиден: ({latitude}, {longitude})")
             return latitude, longitude
-        logger.info("Кэш устарел, удаление")
+        logger.info(f"Кэш устарел для пользователя {user_id}, удаление")
         del self.cache[user_id]
         return None
 
@@ -103,7 +121,6 @@ class GeoService:
             if not spots:
                 logger.warning("Список спотов пуст")
                 return []
-            # Создаём список SpotWithDistance
             spots_with_distance = [
                 SpotWithDistance(
                     spot=spot,
@@ -113,7 +130,6 @@ class GeoService:
                 )
                 for spot in spots
             ]
-            # Сортируем и ограничиваем
             nearby = sorted(spots_with_distance, key=lambda x: x.distance)[
                 : settings.NEARBY_SPOTS_LIMIT
             ]
