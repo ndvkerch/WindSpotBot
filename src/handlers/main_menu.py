@@ -6,6 +6,8 @@ from aiogram.fsm.state import State, StatesGroup
 from src.services.geo import GeoService
 from src.services.spot import SpotService
 from src.services.checkin import CheckinService
+from src.services.weather import WeatherService
+from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,8 @@ def register_main_menu_handlers(
     geo_service: GeoService,
     spot_service: SpotService,
     checkin_service: CheckinService,
+    weather_service: WeatherService,
+    chat_service: ChatService,
 ):
     """Регистрация обработчиков для callback-запросов главного меню."""
 
@@ -55,8 +59,8 @@ def register_main_menu_handlers(
                 longitude,
                 spot_service,
                 checkin_service,
-                None,  # weather_service, можно добавить позже
-                None,  # chat_service, можно добавить позже
+                weather_service,
+                chat_service,
                 user_id,
                 state,
                 geo_service,
