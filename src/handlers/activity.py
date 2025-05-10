@@ -14,16 +14,17 @@ from src.keyboards.main import MainKeyboards
 
 logger = logging.getLogger(__name__)
 
+
 def register_activity_handlers(
     dp: Dispatcher,
     geo_service: GeoService,
     spot_service: SpotService,
     checkin_service: CheckinService,
     weather_service: WeatherService,
-    chat_service: ChatService
+    chat_service: ChatService,
 ):
     """Регистрация хендлеров для команды /activity."""
-    
+
     @dp.message(Command(commands=["activity"]))
     async def cmd_activity(message: Message, state: FSMContext, user_id: int = None):
         """Обработка команды /activity."""
@@ -105,7 +106,9 @@ def register_activity_handlers(
                 )
                 return
             spots = await spot_service.get_all_spots()
-            nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
+            nearby_spots = await geo_service.get_nearby_spots(
+                spots, latitude, longitude
+            )
             active_spots = []
             for spot_with_distance in nearby_spots[:10]:
                 spot = spot_with_distance.spot
@@ -113,9 +116,7 @@ def register_activity_handlers(
                 if on_spot or planning:
                     active_spots.append(spot_with_distance)
             if not active_spots:
-                await callback.message.edit_text(
-                    "Нет спотов с активностью поблизости."
-                )
+                await callback.message.edit_text("Нет спотов с активностью поблизости.")
                 return
             new_message_ids = []
             for spot_with_distance in active_spots:
@@ -142,20 +143,30 @@ def register_activity_handlers(
                             f"🌊 Вода: {water_temp} °C"
                         )
                 except Exception as e:
-                    logger.error(f"Ошибка при получении погоды для спота {spot.name}: {e}")
+                    logger.error(
+                        f"Ошибка при получении погоды для спота {spot.name}: {e}"
+                    )
                     weather_info = "🌫 Погода: ошибка"
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
-                    f"🏄 На месте: {len(on_spot)} чел." if on_spot else "🏄 На месте: никого"
+                    f"🏄 На месте: {len(on_spot)} чел."
+                    if on_spot
+                    else "🏄 На месте: никого"
                 )
                 planning_info = (
-                    f"⏳ Планируют: {len(planning) if planning else "⏳ Планируют: никого"
+                    f"⏳ Планируют: {len(planning)} чел."
+                    if planning
+                    else "⏳ Планируют: никого"
                 )
                 try:
                     chat_link = await chat_service.get_chat_link(spot.name)
-                    chat_info = f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
+                    chat_info = (
+                        f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
+                    )
                 except Exception as e:
-                    logger.error(f"Ошибка при получении ссылки на чат для спота {spot.name}: {e}")
+                    logger.error(
+                        f"Ошибка при получении ссылки на чат для спота {spot.name}: {e}"
+                    )
                     chat_info = "💬 Чат: ошибка"
                 response = (
                     f"📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
@@ -203,7 +214,9 @@ def register_activity_handlers(
                     )
                 else:
                     logger.error(f"Ошибка при обновлении клавиатуры управления: {e}")
-                    await callback.message.answer("Управление активностью:", reply_markup=kb)
+                    await callback.message.answer(
+                        "Управление активностью:", reply_markup=kb
+                    )
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_refresh_all: {e}")
