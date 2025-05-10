@@ -14,8 +14,13 @@ class WeatherService:
     """Сервис для получения данных о погоде с Open-Meteo."""
 
     @cached(ttl=1800, key_builder=lambda *args, **kwargs: f"wind_{args[1]}_{args[2]}")
-    async def get_wind_data(self, lat: float, lon: float) -> Optional[Dict]:
+    async def get_wind_data(
+        self, lat: float, lon: float, force_refresh: bool = False
+    ) -> Optional[Dict]:
         """Получает данные о ветре с Open-Meteo Forecast API."""
+        cache_key = f"wind_{lat}_{lon}"
+        if force_refresh:
+            await cache.delete(cache_key)
         url = (
             f"https://api.open-meteo.com/v1/forecast?"
             f"latitude={lat}&longitude={lon}&current=windspeed_10m,winddirection_10m,windgusts_10m&"
@@ -53,8 +58,13 @@ class WeatherService:
             return None
 
     @cached(ttl=3600, key_builder=lambda *args, **kwargs: f"water_{args[1]}_{args[2]}")
-    async def get_water_temp(self, lat: float, lon: float) -> Optional[float]:
+    async def get_water_temp(
+        self, lat: float, lon: float, force_refresh: bool = False
+    ) -> Optional[float]:
         """Получает температуру воды с Open-Meteo Marine API."""
+        cache_key = f"water_{lat}_{lon}"
+        if force_refresh:
+            await cache.delete(cache_key)
         url = (
             f"https://marine-api.open-meteo.com/v1/marine?"
             f"latitude={lat}&longitude={lon}&hourly=sea_surface_temperature"
@@ -98,22 +108,25 @@ class WeatherService:
             logger.error(f"Ошибка при запросе температуры воды: {e}")
             return None
 
-    async def get_weather(self, latitude: float, longitude: float) -> Optional[Dict]:
+    async def get_weather(
+        self, latitude: float, longitude: float, force_refresh: bool = False
+    ) -> Optional[Dict]:
         """
         Получает текущие данные о ветре, порывах ветра, направлении и температуре воды с Open-Meteo.
 
         Args:
             latitude (float): Широта точки.
             longitude (float): Долгота точки.
+            force_refresh (bool): Если True, отключает кэширование.
 
         Returns:
             Optional[Dict]: Словарь с данными о ветре (скорость, направление, порывы) и температуре воды (°C).
                            Если данные недоступны, возвращается None.
         """
-        # Параллельный запуск запросов
+        # Параллельный запуск Menggunakan asyncio.gather
         wind_task, water_task = await asyncio.gather(
-            self.get_wind_data(latitude, longitude),
-            self.get_water_temp(latitude, longitude),
+            self.get_wind_data(latitude, longitude, force_refresh),
+            self.get_water_temp(latitude, longitude, force_refresh),
             return_exceptions=True,
         )
 
@@ -140,10 +153,27 @@ class WeatherService:
             return None
         return result
 
-    def wind_direction_to_text(self, degrees: float) -> str:
-        """Преобразует направление ветра (в градусах) в текстовую форму."""
+    def wind_direction_to_text(degrees: Optional[float]) -> str:
+        """Преобразование градусов направления ветра в текстовое описание."""
         if degrees is None:
             return "N/A"
-        directions = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"]
-        index = round(degrees / 45) % 8
+        directions = [
+            "С",
+            "ССВ",
+            "СВ",
+            "ВСВ",
+            "В",
+            "ВЮВ",
+            "ЮВ",
+            "ЮЮВ",
+            "Ю",
+            "ЮЮЗ",
+            "ЮЗ",
+            "ЗЮЗ",
+            "З",
+            "ЗСЗ",
+            "СЗ",
+            "ССЗ",
+        ]
+        index = round(degrees / 22.5) % 16
         return directions[index]
