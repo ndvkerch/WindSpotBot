@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import traceback
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, BotCommand
@@ -99,7 +100,14 @@ async def main():
         async def error_handler(event, **kwargs):
             """Обработка ошибок."""
             exception = kwargs.get("exception")
-            logger.error(f"Ошибка при обработке обновления: {exception}")
+            if exception:
+                logger.error(
+                    f"Ошибка при обработке обновления: {exception}\n{traceback.format_exc()}"
+                )
+            else:
+                logger.error(
+                    f"Неизвестная ошибка при обработке обновления\n{traceback.format_exc()}"
+                )
             return True
 
         # Хендлер для /start
@@ -117,8 +125,9 @@ async def main():
 
         # Хендлер для чек-ина
         @dp.message(Command(commands=["checkin"]))
-        async def cmd_checkin(message: Message, state: FSMContext, user_id: int):
+        async def cmd_checkin(message: Message, state: FSMContext):
             """Обработка команды /checkin."""
+            user_id = message.from_user.id
             logger.info(f"Команда /checkin от пользователя {user_id}")
             await state.clear()
             cached_location = await geo_service.get_cached_location(user_id)
@@ -225,13 +234,11 @@ async def main():
                 if not spot_id:
                     await callback.message.edit_text("Ошибка: спот не выбран.")
                     return
-                checkin_type = int(
-                    callback.data.split(":", 1)[1]
-                )  # Преобразование в int
+                checkin_type = int(callback.data.split(":", 1)[1])
                 user = User(
                     id=callback.from_user.id,
                     name=callback.from_user.full_name,
-                    username=callback.from_user.id,
+                    username=callback.from_user.username,  # Исправлено: username вместо id
                 )
                 checkin_id = await checkin_service.create_checkin(
                     user, spot_id, checkin_type, duration=3600
@@ -315,8 +322,10 @@ async def main():
             await callback.answer()
 
         # Хендлер для просмотра активности
-        async def cmd_activity(message: Message, state: FSMContext, user_id: int):
+        @dp.message(Command(commands=["activity"]))
+        async def cmd_activity(message: Message, state: FSMContext):
             """Обработка команды /activity."""
+            user_id = message.from_user.id
             logger.info(f"Команда /activity от пользователя {user_id}")
             await state.clear()
             cached_location = await geo_service.get_cached_location(user_id)
@@ -396,7 +405,7 @@ async def main():
                 return
             # Фильтрация спотов с активными чек-инами (типы 1 и 3)
             active_spots = []
-            for spot_with_distance in nearby_spots[:10]:  # Ограничение до 10 спотов
+            for spot_with_distance in nearby_spots[:10]:
                 spot = spot_with_distance.spot
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 if on_spot or planning:
@@ -411,15 +420,14 @@ async def main():
                 weather = await weather_service.get_weather(
                     spot.latitude, spot.longitude
                 )
+                logger.info(
+                    f"Получены погодные данные для спота {spot.name}: {weather}"
+                )
                 weather_info = "🌫 Погода: нет данных"
                 if weather:
                     wind_speed = weather.get("wind_speed", "N/A")
-                    wind_direction = (
-                        weather_service.wind_direction_to_text(
-                            weather.get("wind_direction")
-                        )
-                        if weather.get("wind_direction") is not None
-                        else "N/A"
+                    wind_direction = weather_service.wind_direction_to_text(
+                        weather.get("wind_direction", None)
                     )
                     wind_gusts = weather.get("wind_gusts", "N/A")
                     water_temp = weather.get("water_temperature", "N/A")
@@ -503,19 +511,17 @@ async def main():
                 new_message_ids = []
                 for spot_with_distance in active_spots:
                     spot = spot_with_distance.spot
-                    # Отключение кэша для свежего запроса погоды
                     weather = await weather_service.get_weather(
                         spot.latitude, spot.longitude, force_refresh=True
+                    )
+                    logger.info(
+                        f"Получены обновлённые погодные данные для спота {spot.name}: {weather}"
                     )
                     weather_info = "🌫 Погода: нет данных"
                     if weather:
                         wind_speed = weather.get("wind_speed", "N/A")
-                        wind_direction = (
-                            weather_service.wind_direction_to_text(
-                                weather.get("wind_direction")
-                            )
-                            if weather.get("wind_direction") is not None
-                            else "N/A"
+                        wind_direction = weather_service.wind_direction_to_text(
+                            weather.get("wind_direction", None)
                         )
                         wind_gusts = weather.get("wind_gusts", "N/A")
                         water_temp = weather.get("water_temperature", "N/A")
@@ -547,7 +553,6 @@ async def main():
                         f"{planning_info}\n"
                         f"{chat_info}"
                     )
-                    # Поиск message_id для текущего спота
                     message_id = next(
                         (mid for sid, mid in message_ids if sid == spot.id), None
                     )
@@ -569,9 +574,7 @@ async def main():
                     else:
                         sent_message = await callback.message.answer(response)
                         new_message_ids.append((spot.id, sent_message.message_id))
-                # Обновление message_ids в состоянии
                 await state.update_data(activity_message_ids=new_message_ids)
-                # Обновление клавиатуры управления
                 kb = MainKeyboards.get_activity_controls()
                 await callback.message.edit_text(
                     "Управление активностью:", reply_markup=kb
@@ -599,8 +602,9 @@ async def main():
 
         # Хендлер для списка спотов
         @dp.message(Command(commands=["spots"]))
-        async def cmd_spots(message: Message, state: FSMContext, user_id: int):
+        async def cmd_spots(message: Message, state: FSMContext):
             """Обработка команды /spots."""
+            user_id = message.from_user.id
             logger.info(f"Команда /spots от пользователя {user_id}")
             await state.clear()
             cached_location = await geo_service.get_cached_location(user_id)
@@ -871,22 +875,18 @@ async def main():
             )
             try:
                 if callback.data == "checkin":
-                    await cmd_checkin(
-                        callback.message, state, user_id=callback.from_user.id
-                    )
+                    await cmd_checkin(callback.message, state)
                 elif callback.data == "spots":
-                    await cmd_spots(
-                        callback.message, state, user_id=callback.from_user.id
-                    )
+                    await cmd_spots(callback.message, state)
                 elif callback.data == "activity":
-                    await cmd_activity(
-                        callback.message, state, user_id=callback.from_user.id
-                    )
+                    await cmd_activity(callback.message, state)
                 elif callback.data == "add_spot":
                     await cmd_add_spot(callback.message, state)
                 await callback.answer()
             except Exception as e:
-                logger.error(f"Ошибка в process_main_menu: {e}")
+                logger.error(
+                    f"Ошибка в process_main_menu: {e}\n{traceback.format_exc()}"
+                )
                 await callback.message.answer(f"Ошибка: {str(e)}")
 
         # Запуск бота
