@@ -3,8 +3,7 @@ from aiogram import Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State
-from src.bot import show_activity
+from aiogram.fsm.state import State, StatesGroup
 from src.services.geo import GeoService
 from src.services.spot import SpotService
 from src.services.checkin import CheckinService
@@ -13,6 +12,104 @@ from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
 
 logger = logging.getLogger(__name__)
+
+
+class ActivityStates(StatesGroup):
+    """Состояния для просмотра активности."""
+
+    requesting_location = State()
+
+
+async def show_activity(
+    message: Message,
+    latitude: float,
+    longitude: float,
+    spot_service: SpotService,
+    checkin_service: CheckinService,
+    weather_service: WeatherService,
+    chat_service: ChatService,
+    user_id: int,
+    state: FSMContext,
+    geo_service: GeoService,
+):
+    """Отображение активности на спотах."""
+    logger.info(f"Отображение активности для пользователя {user_id}")
+    try:
+        spots = await spot_service.get_all_spots()
+        nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
+        if not nearby_spots:
+            await message.answer("Активные споты не найдены.")
+            return
+        active_spots = []
+        for spot_with_distance in nearby_spots[:10]:
+            spot = spot_with_distance.spot
+            on_spot, planning = await checkin_service.get_active_users(spot.id)
+            if on_spot or planning:
+                active_spots.append(spot_with_distance)
+        if not active_spots:
+            await message.answer("Нет спотов с активностью поблизости.")
+            return
+        message_ids = []
+        for spot_with_distance in active_spots:
+            spot = spot_with_distance.spot
+            try:
+                weather = await weather_service.get_weather(
+                    spot.latitude, spot.longitude
+                )
+                logger.info(
+                    f"Получены погодные данные для спота {spot.name}: {weather}"
+                )
+                weather_info = "🌫 Погода: нет данных"
+                if weather:
+                    wind_speed = weather.get("wind_speed", "N/A")
+                    wind_direction = weather_service.wind_direction_to_text(
+                        weather.get("wind_direction", None)
+                    )
+                    wind_gusts = weather.get("wind_gusts", "N/A")
+                    water_temp = weather.get("water_temperature", "N/A")
+                    weather_info = (
+                        f"🌬 Ветер: {wind_speed} м/с\n"
+                        f"🧭 Направление: {wind_direction}\n"
+                        f"💨 Порывы: {wind_gusts} м/с\n"
+                        f"🌊 Вода: {water_temp} °C"
+                    )
+            except Exception as e:
+                logger.error(f"Ошибка при получении погоды для спота {spot.name}: {e}")
+                weather_info = "🌫 Погода: ошибка"
+            on_spot, planning = await checkin_service.get_active_users(spot.id)
+            on_spot_info = (
+                f"🏄 На месте: {len(on_spot)} чел."
+                if on_spot
+                else "🏄 На месте: никого"
+            )
+            planning_info = (
+                f"⏳ Планируют: {len(planning)} чел."
+                if planning
+                else "⏳ Планируют: никого"
+            )
+            try:
+                chat_link = await chat_service.get_chat_link(spot.name)
+                chat_info = f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
+            except Exception as e:
+                logger.error(
+                    f"Ошибка при получении ссылки на чат для спота {spot.name}: {e}"
+                )
+                chat_info = "💬 Чат: ошибка"
+            response = (
+                f"📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
+                f"{weather_info}\n"
+                f"{on_spot_info}\n"
+                f"{planning_info}\n"
+                f"{chat_info}"
+            )
+            sent_message = await message.answer(response)
+            message_ids.append((spot.id, sent_message.message_id))
+        await state.update_data(activity_message_ids=message_ids)
+        kb = MainKeyboards.get_activity_controls()
+        await message.answer("Управление активностью:", reply_markup=kb)
+    except Exception as e:
+        logger.error(f"Ошибка в show_activity: {e}")
+        await message.answer("Ошибка при отображении активности.")
 
 
 def register_activity_handlers(
@@ -45,12 +142,13 @@ def register_activity_handlers(
                 chat_service,
                 user_id,
                 state,
+                geo_service,
             )
         else:
             await geo_service.request_location(message, state, user_id)
-            await state.set_state(State("ActivityStates:requesting_location"))
+            await state.set_state(ActivityStates.requesting_location)
 
-    @dp.message(State("ActivityStates:requesting_location"))
+    @dp.message(ActivityStates.requesting_location)
     async def process_activity_location(message: Message, state: FSMContext):
         """Обработка геолокации для активности."""
         user_id = message.from_user.id
@@ -79,6 +177,7 @@ def register_activity_handlers(
                 chat_service,
                 user_id,
                 state,
+                geo_service,
             )
             await state.clear()
         else:
@@ -230,6 +329,6 @@ def register_activity_handlers(
         logger.info(f"Обработка refresh_location от пользователя {user_id}")
         await state.clear()
         await geo_service.request_location(callback.message, state, user_id)
-        await state.set_state(State("ActivityStates:requesting_location"))
+        await state.set_state(ActivityStates.requesting_location)
         await callback.message.edit_text("Пожалуйста, отправьте новую геолокацию.")
         await callback.answer()
