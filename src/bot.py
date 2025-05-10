@@ -4,7 +4,7 @@ import logging
 import traceback
 from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
-from aiogram.types import BotCommand
+from aiogram.types import BotCommand, Message
 from aiogram.client.default import DefaultBotProperties
 from src.config.config import settings
 from src.services.geo import GeoService
@@ -21,7 +21,9 @@ from src.handlers.start import register_start_handlers
 from src.handlers.activity import register_activity_handlers
 from src.handlers.checkin import register_checkin_handlers
 from src.handlers.main_menu import register_main_menu_handlers
+from src.models.user import User
 import aiosqlite
+import aiohttp
 
 # Настройка логирования
 logging.basicConfig(
@@ -52,7 +54,9 @@ async def main():
     )
 
     # Инициализация БД и сервисов
-    async with aiosqlite.connect("data/database.db") as db:
+    async with aiosqlite.connect(
+        "data/database.db"
+    ) as db, aiohttp.ClientSession() as http_session:
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
         checkin_repo = CheckinRepository(db)
@@ -63,7 +67,7 @@ async def main():
         )
         chat_service = ChatService(bot, topic_service, notification_service)
         spot_service = SpotService(spot_repo, geo_service)
-        weather_service = WeatherService()
+        weather_service = WeatherService(http_session=http_session)
         checkin_service = CheckinService(
             bot, checkin_repo, notification_service, spot_service
         )
@@ -94,7 +98,14 @@ async def main():
             chat_service,
         )
         register_checkin_handlers(dp, geo_service, spot_service, checkin_service)
-        register_main_menu_handlers(dp, geo_service, spot_service, checkin_service)
+        register_main_menu_handlers(
+            dp,
+            geo_service,
+            spot_service,
+            checkin_service,
+            weather_service,
+            chat_service,
+        )
 
         # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
