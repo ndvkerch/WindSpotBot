@@ -121,3 +121,28 @@ class MainKeyboards:
             ]
         )
         return keyboard
+
+    @staticmethod
+    def get_activity_controls() -> InlineKeyboardMarkup:
+        """Создание клавиатуры для управления активностью."""
+        logger.info("Создание клавиатуры для управления активностью")
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔄 Обновить всё", callback_data="refresh_all"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="📍 Обновить геопозицию", callback_data="refresh_location"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🏠 В главное меню", callback_data="main_menu"
+                    )
+                ],
+            ]
+        )
+        return keyboard
