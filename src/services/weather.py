@@ -1,67 +1,149 @@
 import aiohttp
 import logging
+import math
+from datetime import datetime
+import asyncio
+from aiocache import Cache, cached
 from typing import Optional, Dict
 
 logger = logging.getLogger(__name__)
+cache = Cache(Cache.MEMORY)
 
 
 class WeatherService:
-    """Сервис для получения данных о погоде."""
+    """Сервис для получения данных о погоде с Open-Meteo."""
 
-    def __init__(self):
-        self.marine_api_url = "https://marine-api.open-meteo.com/v1/marine"
-        self.weather_api_url = "https://api.open-meteo.com/v1/forecast"
+    @cached(ttl=1800, key_builder=lambda *args, **kwargs: f"wind_{args[1]}_{args[2]}")
+    async def get_wind_data(self, lat: float, lon: float) -> Optional[Dict]:
+        """Получает данные о ветре с Open-Meteo Forecast API."""
+        url = (
+            f"https://api.open-meteo.com/v1/forecast?"
+            f"latitude={lat}&longitude={lon}&current=windspeed_10m,winddirection_10m,windgusts_10m&"
+            f"windspeed_unit=ms&timezone=auto"
+        )
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.error(
+                            f"Ошибка Open-Meteo Wind API: status={response.status}"
+                        )
+                        return None
+                    data = await response.json()
+                    if "current" not in data:
+                        logger.error("Отсутствует ключ 'current' в ответе Open-Meteo")
+                        return None
+                    current = data["current"]
+                    wind_speed = current.get("windspeed_10m")
+                    wind_direction = current.get("winddirection_10m")
+                    wind_gusts = current.get("windgusts_10m")
+                    if wind_speed is None or wind_direction is None:
+                        logger.error("Данные о ветре отсутствуют в current")
+                        return None
+                    logger.info(f"Данные о ветре получены для lat={lat}, lon={lon}")
+                    return {
+                        "wind_speed": wind_speed,
+                        "wind_direction": wind_direction,
+                        "wind_gusts": wind_gusts,
+                    }
+        except Exception as e:
+            logger.error(f"Ошибка при запросе ветра: {e}")
+            return None
+
+    @cached(ttl=3600, key_builder=lambda *args, **kwargs: f"water_{args[1]}_{args[2]}")
+    async def get_water_temp(self, lat: float, lon: float) -> Optional[float]:
+        """Получает температуру воды с Open-Meteo Marine API."""
+        url = (
+            f"https://marine-api.open-meteo.com/v1/marine?"
+            f"latitude={lat}&longitude={lon}&hourly=sea_surface_temperature"
+        )
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as session:
+                async with session.get(url) as response:
+                    if response.status != 200:
+                        logger.error(
+                            f"Ошибка Open-Meteo Marine API: status={response.status}"
+                        )
+                        return None
+                    data = await response.json()
+                    hourly = data.get("hourly", {})
+                    times = hourly.get("time", [])
+                    temps = hourly.get("sea_surface_temperature", [])
+                    if not times or not temps:
+                        logger.warning(
+                            f"Температура воды недоступна для lat={lat}, lon={lon}"
+                        )
+                        return None
+                    # Найти ближайшее время
+                    current_time = datetime.utcnow().timestamp()
+                    index = min(
+                        range(len(times)),
+                        key=lambda i: abs(
+                            datetime.fromisoformat(
+                                times[i].replace("Z", "+00:00")
+                            ).timestamp()
+                            - current_time
+                        ),
+                    )
+                    water_temp = temps[index]
+                    logger.info(
+                        f"Температура воды получена для lat={lat}, lon={lon}: {water_temp}°C"
+                    )
+                    return water_temp
+        except Exception as e:
+            logger.error(f"Ошибка при запросе температуры воды: {e}")
+            return None
 
     async def get_weather(self, latitude: float, longitude: float) -> Optional[Dict]:
-        """Получение данных о погоде для координат."""
-        try:
-            # Запрос к marine-api для water_temperature
-            marine_params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "daily": "water_temperature",
-            }
-            # Запрос к weather-api для wind_speed_10m
-            weather_params = {
-                "latitude": latitude,
-                "longitude": longitude,
-                "hourly": "wind_speed_10m",
-            }
-            async with aiohttp.ClientSession() as session:
-                # Запрос к marine-api
-                async with session.get(
-                    self.marine_api_url, params=marine_params
-                ) as marine_response:
-                    if marine_response.status != 200:
-                        logger.error(
-                            f"Ошибка marine API Open-Meteo: {marine_response.status}"
-                        )
-                        return None
-                    marine_data = await marine_response.json()
+        """
+        Получает текущие данные о ветре, порывах ветра, направлении и температуре воды с Open-Meteo.
 
-                # Запрос к weather-api
-                async with session.get(
-                    self.weather_api_url, params=weather_params
-                ) as weather_response:
-                    if weather_response.status != 200:
-                        logger.error(
-                            f"Ошибка weather API Open-Meteo: {weather_response.status}"
-                        )
-                        return None
-                    weather_data = await weather_response.json()
+        Args:
+            latitude (float): Широта точки.
+            longitude (float): Долгота точки.
 
-            # Обработка данных
-            marine_latest = marine_data.get("daily", {})
-            weather_latest = weather_data.get("hourly", {})
-            water_temp = marine_latest.get("water_temperature", [None])[-1]
-            wind_speed = weather_latest.get("wind_speed_10m", [None])[-1]
+        Returns:
+            Optional[Dict]: Словарь с данными о ветре (скорость, направление, порывы) и температуре воды (°C).
+                           Если данные недоступны, возвращается None.
+        """
+        # Параллельный запуск запросов
+        wind_task, water_task = await asyncio.gather(
+            self.get_wind_data(latitude, longitude),
+            self.get_water_temp(latitude, longitude),
+            return_exceptions=True,
+        )
 
-            result = {
-                "wind_speed": wind_speed,  # м/с
-                "water_temperature": water_temp,  # °C
-            }
-            logger.info(f"Погода получена: {result}")
-            return result
-        except Exception as e:
-            logger.error(f"Ошибка при получении погоды: {e}")
+        # Обработка результатов
+        result = {
+            "wind_speed": None,
+            "wind_direction": None,
+            "wind_gusts": None,
+            "water_temperature": None,
+        }
+        if isinstance(wind_task, dict):
+            result.update(wind_task)
+        elif wind_task is not None:
+            logger.error(f"Ошибка в wind_task: {wind_task}")
+        if isinstance(water_task, float):
+            result["water_temperature"] = water_task
+        elif water_task is not None:
+            logger.error(f"Ошибка в water_task: {water_task}")
+
+        if all(value is None for value in result.values()):
+            logger.warning(
+                f"Все данные о погоде недоступны для lat={latitude}, lon={longitude}"
+            )
             return None
+        return result
+
+    def wind_direction_to_text(self, degrees: float) -> str:
+        """Преобразует направление ветра (в градусах) в текстовую форму."""
+        if degrees is None:
+            return "N/A"
+        directions = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"]
+        index = round(degrees / 45) % 8
+        return directions[index]
