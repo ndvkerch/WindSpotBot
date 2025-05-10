@@ -123,14 +123,12 @@ class WeatherService:
             Optional[Dict]: Словарь с данными о ветре (скорость, направление, порывы) и температуре воды (°C).
                            Если данные недоступны, возвращается None.
         """
-        # Параллельный запуск Menggunakan asyncio.gather
         wind_task, water_task = await asyncio.gather(
             self.get_wind_data(latitude, longitude, force_refresh),
             self.get_water_temp(latitude, longitude, force_refresh),
             return_exceptions=True,
         )
 
-        # Обработка результатов
         result = {
             "wind_speed": None,
             "wind_direction": None,
@@ -153,6 +151,7 @@ class WeatherService:
             return None
         return result
 
+    @staticmethod
     def wind_direction_to_text(degrees: Optional[float]) -> str:
         """Преобразование градусов направления ветра в текстовое описание."""
         if degrees is None:
