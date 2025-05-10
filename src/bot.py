@@ -149,7 +149,7 @@ async def main():
                 await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
                 await state.set_state(CheckinStates.selecting_spot)
             else:
-                await geo_service.request_location(message, state)
+                await geo_service.request_location(message, state, user_id)
                 await state.set_state(CheckinStates.requesting_location)
 
         # Обработка геолокации для чек-ина
@@ -262,7 +262,7 @@ async def main():
             user_id = callback.from_user.id
             logger.info(f"Нажата кнопка 'Назад' от пользователя {user_id}")
             await state.clear()
-            await geo_service.request_location(callback.message, state)
+            await geo_service.request_location(callback.message, state, user_id)
             await state.set_state(CheckinStates.requesting_location)
             await callback.message.edit_text("Пожалуйста, отправьте геолокацию.")
             await callback.answer()
@@ -296,6 +296,7 @@ async def main():
                 await callback.message.edit_text(
                     "Геолокация не найдена. Отправьте геолокацию заново."
                 )
+                await geo_service.request_location(callback.message, state, user_id)
                 await state.set_state(CheckinStates.requesting_location)
             await callback.answer()
 
@@ -336,9 +337,10 @@ async def main():
                     weather_service,
                     chat_service,
                     user_id,
+                    state,
                 )
             else:
-                await geo_service.request_location(message, state)
+                await geo_service.request_location(message, state, user_id)
                 await state.set_state(ActivityStates.requesting_location)
 
         # Обработка геолокации для активности
@@ -372,6 +374,7 @@ async def main():
                     weather_service,
                     chat_service,
                     user_id,
+                    state,
                 )
                 await state.clear()
             else:
@@ -387,6 +390,7 @@ async def main():
             weather_service: WeatherService,
             chat_service: ChatService,
             user_id: int,
+            state: FSMContext,
         ):
             """Отображение активности на спотах."""
             logger.info(f"Отображение активности для пользователя {user_id}")
@@ -581,7 +585,7 @@ async def main():
             user_id = callback.from_user.id
             logger.info(f"Обработка refresh_location от пользователя {user_id}")
             await state.clear()
-            await geo_service.request_location(callback.message, state)
+            await geo_service.request_location(callback.message, state, user_id)
             await state.set_state(ActivityStates.requesting_location)
             await callback.message.edit_text("Пожалуйста, отправьте новую геолокацию.")
             await callback.answer()
@@ -609,7 +613,7 @@ async def main():
                 kb = MainKeyboards.get_spots_list(nearby_spots)
                 await message.answer("Ближайшие споты:", reply_markup=kb)
             else:
-                await geo_service.request_location(message, state)
+                await geo_service.request_location(message, state, user_id)
                 await state.set_state(SpotsStates.requesting_location)
 
         # Обработка геолокации для спотов
