@@ -96,8 +96,9 @@ async def main():
 
         # Глобальный обработчик ошибок
         @dp.error()
-        async def error_handler(update, exception):
+        async def error_handler(event, **kwargs):
             """Обработка ошибок."""
+            exception = kwargs.get("exception")
             logger.error(f"Ошибка при обработке обновления: {exception}")
             return True
 
@@ -230,7 +231,7 @@ async def main():
                 user = User(
                     id=callback.from_user.id,
                     name=callback.from_user.full_name,
-                    username=callback.from_user.username,
+                    username=callback.from_user.id,
                 )
                 checkin_id = await checkin_service.create_checkin(
                     user, spot_id, checkin_type, duration=3600
