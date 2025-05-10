@@ -233,8 +233,12 @@ async def main():
                 await message.answer(f"Не удалось отправить сообщение: {e}")
 
         # Запуск бота
-        logger.info("Бот запущен")
-        await dp.start_polling(bot)
+        try:
+            logger.info("Бот запущен")
+            await dp.start_polling(bot)
+        finally:
+            # Закрытие WeatherService
+            await weather_service.close()
 
 
 if __name__ == "__main__":
