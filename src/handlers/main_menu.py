@@ -1,6 +1,6 @@
 import logging
 from aiogram import Dispatcher
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message, Location
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.services.geo import GeoService
@@ -29,6 +29,12 @@ class AddSpotStates(StatesGroup):
     """Состояния для добавления спота."""
 
     entering_name = State()
+
+
+class ActivityStates(StatesGroup):
+    """Состояния для активности."""
+
+    requesting_location = State()
 
 
 def register_main_menu_handlers(
@@ -67,7 +73,7 @@ def register_main_menu_handlers(
             )
         else:
             await geo_service.request_location(callback.message, state, user_id)
-            await state.set_state(State("ActivityStates:requesting_location"))
+            await state.set_state(ActivityStates.requesting_location)
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "spots")
@@ -143,3 +149,71 @@ def register_main_menu_handlers(
         kb = MainKeyboards.get_main_menu()
         await callback.message.answer("Главное меню:", reply_markup=kb)
         await callback.answer()
+
+    @dp.message(ActivityStates.requesting_location)
+    async def process_activity_location(message: Message, state: FSMContext):
+        """Обработка геолокации для активности."""
+        user_id = message.from_user.id
+        logger.info(f"Получена геолокация для активности от пользователя {user_id}")
+        if not message.location:
+            await message.answer("Пожалуйста, отправьте геолокацию.")
+            return
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        await geo_service.cache_location(user_id, latitude, longitude)
+        from src.handlers.activity import show_activity
+
+        await show_activity(
+            message,
+            latitude,
+            longitude,
+            spot_service,
+            checkin_service,
+            weather_service,
+            chat_service,
+            user_id,
+            state,
+            geo_service,
+        )
+        await state.clear()
+
+    @dp.message(SpotsStates.requesting_location)
+    async def process_spots_location(message: Message, state: FSMContext):
+        """Обработка геолокации для ближайших спотов."""
+        user_id = message.from_user.id
+        logger.info(f"Получена геолокация для спотов от пользователя {user_id}")
+        if not message.location:
+            await message.answer("Пожалуйста, отправьте геолокацию.")
+            return
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        await geo_service.cache_location(user_id, latitude, longitude)
+        spots = await spot_service.get_all_spots()
+        nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
+        if not nearby_spots:
+            await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
+        else:
+            kb = MainKeyboards.get_spots_list(nearby_spots)
+            await message.answer("Ближайшие споты:", reply_markup=kb)
+        await state.clear()
+
+    @dp.message(CheckinStates.requesting_location)
+    async def process_checkin_location(message: Message, state: FSMContext):
+        """Обработка геолокации для чек-ина."""
+        user_id = message.from_user.id
+        logger.info(f"Получена геолокация для чек-ина от пользователя {user_id}")
+        if not message.location:
+            await message.answer("Пожалуйста, отправьте геолокацию.")
+            return
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        await geo_service.cache_location(user_id, latitude, longitude)
+        spots = await spot_service.get_all_spots()
+        nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
+        if not nearby_spots:
+            await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
+        else:
+            await state.update_data(latitude=latitude, longitude=longitude)
+            kb = MainKeyboards.get_spots_list(nearby_spots)
+            await message.answer("Выберите спот:", reply_markup=kb)
+        await state.clear()
