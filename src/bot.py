@@ -134,6 +134,7 @@ async def main():
                     )
                     return
                 kb = MainKeyboards.get_spots_list(nearby_spots)
+                await state.update_data(latitude=latitude, longitude=longitude)
                 await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
                 await state.set_state(CheckinStates.selecting_spot)
             else:
@@ -173,6 +174,7 @@ async def main():
                     )
                     return
                 kb = MainKeyboards.get_spots_list(nearby_spots)
+                await state.update_data(latitude=latitude, longitude=longitude)
                 await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
                 await state.set_state(CheckinStates.selecting_spot)
             else:
@@ -222,7 +224,9 @@ async def main():
                 if not spot_id:
                     await callback.message.edit_text("Ошибка: спот не выбран.")
                     return
-                checkin_type = callback.data.split(":", 1)[1]
+                checkin_type = int(
+                    callback.data.split(":", 1)[1]
+                )  # Преобразование в int
                 user = User(
                     id=callback.from_user.id,
                     name=callback.from_user.full_name,
@@ -246,6 +250,68 @@ async def main():
                 logger.error(f"Ошибка в callback_checkin: {e}")
                 await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
                 await state.clear()
+
+        # Обработка кнопки "Назад" к запросу геолокации
+        @dp.callback_query(lambda c: c.data == "back_to_location")
+        async def callback_back_to_location(callback: CallbackQuery, state: FSMContext):
+            """Обработка возврата к запросу геолокации."""
+            logger.info(
+                f"Нажата кнопка 'Назад' от пользователя {callback.from_user.id}"
+            )
+            await state.clear()
+            await geo_service.request_location(callback.message, state)
+            await state.set_state(CheckinStates.requesting_location)
+            await callback.message.edit_text("Пожалуйста, отправьте геолокацию.")
+            await callback.answer()
+
+        # Обработка кнопки "Назад" к выбору спота
+        @dp.callback_query(lambda c: c.data == "back_to_spots")
+        async def callback_back_to_spots(callback: CallbackQuery, state: FSMContext):
+            """Обработка возврата к выбору спота."""
+            logger.info(
+                f"Нажата кнопка 'Назад' от пользователя {callback.from_user.id}"
+            )
+            data = await state.get_data()
+            latitude = data.get("latitude")
+            longitude = data.get("longitude")
+            if latitude and longitude:
+                spots = await spot_service.get_all_spots()
+                nearby_spots = await geo_service.get_nearby_spots(
+                    spots, latitude, longitude
+                )
+                if not nearby_spots:
+                    await callback.message.edit_text(
+                        "Споты не найдены. Добавьте споты через /add_spot."
+                    )
+                    await state.clear()
+                    return
+                kb = MainKeyboards.get_spots_list(nearby_spots)
+                await callback.message.edit_text(
+                    "Выберите спот для чек-ина:", reply_markup=kb
+                )
+                await state.set_state(CheckinStates.selecting_spot)
+            else:
+                await callback.message.edit_text(
+                    "Геолокация не найдена. Отправьте геолокацию заново."
+                )
+                await state.set_state(CheckinStates.requesting_location)
+            await callback.answer()
+
+        # Обработка кнопки "В главное меню"
+        @dp.callback_query(lambda c: c.data == "main_menu")
+        async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
+            """Обработка возврата в главное меню."""
+            logger.info(
+                f"Нажата кнопка 'В главное меню' от пользователя {callback.from_user.id}"
+            )
+            await state.clear()
+            kb = MainKeyboards.get_main_menu()
+            await callback.message.edit_text(
+                "Добро пожаловать в WindSpotBot! 🏄‍♂️\n"
+                "Найдите споты для виндсёрфинга, отметьтесь или подпишитесь на уведомления!",
+                reply_markup=kb,
+            )
+            await callback.answer()
 
         # Хендлер для просмотра активности
         async def cmd_activity(message: Message, state: FSMContext, user_id: int):
@@ -336,20 +402,24 @@ async def main():
                 if weather:
                     wind_speed = weather.get("wind_speed", "N/A")
                     water_temp = weather.get("water_temperature", "N/A")
-                    weather_info = f"Ветер: {wind_speed} м/с, Вода: {water_temp} °C"
+                    weather_info = (
+                        f"🌬 Ветер: {wind_speed} м/с, 🌊 Вода: {water_temp} °C"
+                    )
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
                 on_spot_info = (
-                    f"На месте: {len(on_spot)} чел." if on_spot else "На месте: никого"
+                    f"🏄 На месте: {len(on_spot)} чел."
+                    if on_spot
+                    else "🏄 На месте: никого"
                 )
                 planning_info = (
-                    f"Планируют: {len(planning)} чел."
+                    f"⏳ Планируют: {len(planning)} чел."
                     if planning
-                    else "Планируют: никого"
+                    else "⏳ Планируют: никого"
                 )
                 chat_link = await chat_service.get_chat_link(spot.name)
-                chat_info = f"Чат: {chat_link}" if chat_link else "Чат: не создан"
+                chat_info = f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
                 response += (
-                    f"\n- {spot.name} ({spot_with_distance.distance:.1f} км)\n"
+                    f"\n📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
                     f"  {weather_info}\n"
                     f"  {on_spot_info}\n"
                     f"  {planning_info}\n"

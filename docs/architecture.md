@@ -12,7 +12,7 @@
   - `NotificationService`: Отправка уведомлений подписчикам (чек-ины, сообщения, погода).
   - `ChatService`: Отправка/получение сообщений в темах спотов, создание тем.
   - `TopicService`: Управление темами в Telegram.
-  - `WeatherService`: Получение данных о погоде через API Open-Meteo.
+  - `WeatherService`: Получение данных о погоде через API Open-Meteo (wind_speed_10m, water_temperature).
   - `SubscriptionService`: Управление подписками (в разработке).
   - `RatingService`: Оценка спотов (планируется).
   - `SchedulerService`: Планировщик задач (планируется).
@@ -20,7 +20,7 @@
 - `repositories/`: Работа с базой данных:
   - `UserRepository`: Пользователи.
   - `SpotRepository`: Споты.
-  - `CheckinRepository`: Чек-ины.
+  - `CheckinRepository`: Чек-ины (создание, получение по пользователю и споту).
   - `SubscriptionRepository`: Подписки.
 - `models/`: Pydantic-модели:
   - `User`: Пользователь.
@@ -60,9 +60,9 @@ Handlers -> Services -> Repositories -> SQLite (data/database.db)
 - Таблицы:
   - `users`: Пользователи (id, username, created_at).
   - `spots`: Споты (id, name, latitude, longitude, description, created_by).
-  - `checkins`: Чек-ины (id, user_id, spot_id, type, created_at).
+  - `checkins`: Чек-ины (id, user_id, spot_id, type, duration, created_at, active_until, planned_at).
   - `subscriptions`: Подписки (user_id, spot_id, created_at).
-  - `spot_topics`: Темы спотов (spot_id, topic_id, created_at).
+  - `spot_topics`: Темы спотов (spot_name, thread_id).
 
 ## Конфигурация
 

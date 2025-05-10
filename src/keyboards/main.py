@@ -1,9 +1,4 @@
-from aiogram.types import (
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-)
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from src.models.spot import Spot, SpotWithDistance
 from typing import List
 import logging
@@ -37,6 +32,12 @@ class MainKeyboards:
                 [InlineKeyboardButton(text="На месте", callback_data="checkin:1")],
                 [InlineKeyboardButton(text="Прибуду", callback_data="checkin:2")],
                 [InlineKeyboardButton(text="Планирую", callback_data="checkin:3")],
+                [InlineKeyboardButton(text="Назад", callback_data="back_to_spots")],
+                [
+                    InlineKeyboardButton(
+                        text="В главное меню", callback_data="main_menu"
+                    )
+                ],
             ]
         )
         return kb
@@ -96,6 +97,12 @@ class MainKeyboards:
                     )
                 ]
             )
+        inline_keyboard.append(
+            [InlineKeyboardButton(text="Назад", callback_data="back_to_location")]
+        )
+        inline_keyboard.append(
+            [InlineKeyboardButton(text="В главное меню", callback_data="main_menu")]
+        )
         kb = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
         logger.debug(f"Клавиатура спотов создана: {len(inline_keyboard)} кнопок")
         return kb
