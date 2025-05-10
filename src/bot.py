@@ -393,7 +393,7 @@ async def main():
             if not nearby_spots:
                 await message.answer("Активные споты не найдены.")
                 return
-            # Фильтрация спотов с активными чек-инами
+            # Фильтрация спотов с активными чек-инами (типы 1 и 3)
             active_spots = []
             for spot_with_distance in nearby_spots[:10]:  # Ограничение до 10 спотов
                 spot = spot_with_distance.spot
@@ -450,10 +450,10 @@ async def main():
                 )
                 sent_message = await message.answer(response)
                 message_ids.append((spot.id, sent_message.message_id))
-            # Сохранение message_ids в состоянии для обновления
-            await message.bot.get_state_data(
-                message.chat.id, message.from_user.id
-            ).update({"activity_message_ids": message_ids})
+            # Сохранение message_ids в состоянии
+            await message.bot.get_state_data(message.chat.id, user_id).update(
+                {"activity_message_ids": message_ids}
+            )
             # Добавление кнопок управления
             kb = MainKeyboards.get_activity_controls()
             await message.answer("Управление активностью:", reply_markup=kb)
