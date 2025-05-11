@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import asyncio
 import logging
 import traceback
@@ -7,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import BotCommand, Message
 from aiogram.client.default import DefaultBotProperties
 from src.config.config import settings
+from src.database.init import init_db
 from src.services.geo import GeoService
 from src.services.topic import TopicService
 from src.services.notification import NotificationService
@@ -17,6 +17,7 @@ from src.services.weather import WeatherService
 from src.repositories.subscription import SubscriptionRepository
 from src.repositories.spot import SpotRepository
 from src.repositories.checkin import CheckinRepository
+from src.repositories.user import UserRepository
 from src.handlers.start import register_start_handlers
 from src.handlers.activity import register_activity_handlers
 from src.handlers.checkin import register_checkin_handlers
@@ -25,7 +26,6 @@ from src.models.user import User
 import aiosqlite
 import aiohttp
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
@@ -38,7 +38,6 @@ async def main():
     bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
 
-    # Регистрация команд для меню Telegram
     await bot.set_my_commands(
         [
             BotCommand(command="/start", description="Запустить бота"),
@@ -53,10 +52,11 @@ async def main():
         ]
     )
 
-    # Инициализация БД и сервисов
     async with aiosqlite.connect(
         "data/database.db"
     ) as db, aiohttp.ClientSession() as http_session:
+        await init_db("data/database.db")
+        user_repo = UserRepository(db)
         subscription_repo = SubscriptionRepository(db)
         spot_repo = SpotRepository(db)
         checkin_repo = CheckinRepository(db)
@@ -72,7 +72,6 @@ async def main():
             bot, checkin_repo, notification_service, spot_service
         )
 
-        # Глобальный обработчик ошибок
         @dp.error()
         async def error_handler(event, **kwargs):
             """Обработка ошибок."""
@@ -87,8 +86,7 @@ async def main():
                 )
             return True
 
-        # Регистрация хендлеров
-        register_start_handlers(dp)
+        register_start_handlers(dp, user_repo=user_repo, geo_service=geo_service)
         register_activity_handlers(
             dp,
             geo_service,
@@ -107,7 +105,6 @@ async def main():
             chat_service,
         )
 
-        # Хендлер для создания темы
         @dp.message(Command(commands=["create_topic"]))
         async def cmd_create_topic(message: Message):
             """Создание темы для спота."""
@@ -136,7 +133,6 @@ async def main():
                 logger.error(f"Ошибка в cmd_create_topic: {e}")
                 await message.answer(f"Не удалось создать тему: {e}")
 
-        # Хендлер для подписки
         @dp.message(Command(commands=["subscribe"]))
         async def cmd_subscribe(message: Message):
             """Подписка на события спота."""
@@ -169,7 +165,6 @@ async def main():
                 logger.error(f"Ошибка в cmd_subscribe: {e}")
                 await message.answer(f"Не удалось создать подписку: {e}")
 
-        # Хендлер для теста уведомлений
         @dp.message(Command(commands=["test_notification"]))
         async def cmd_test_notification(message: Message):
             """Тест отправки уведомления."""
@@ -207,7 +202,6 @@ async def main():
                 logger.error(f"Ошибка в cmd_test_notification: {e}")
                 await message.answer(f"Не удалось отправить уведомление: {e}")
 
-        # Хендлер для теста чата
         @dp.message(Command(commands=["test_chat"]))
         async def cmd_test_chat(message: Message):
             """Тест отправки сообщения в тему."""
@@ -232,13 +226,12 @@ async def main():
                 logger.error(f"Ошибка в cmd_test_chat: {e}")
                 await message.answer(f"Не удалось отправить сообщение: {e}")
 
-        # Запуск бота
         try:
             logger.info("Бот запущен")
             await dp.start_polling(bot)
         finally:
-            # Закрытие WeatherService
             await weather_service.close()
+            await http_session.close()
 
 
 if __name__ == "__main__":

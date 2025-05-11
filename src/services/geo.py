@@ -1,12 +1,13 @@
+from timezonefinder import TimezoneFinder
 from aiogram import Bot
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
-from src.models.spot import Spot, SpotWithDistance
 from src.config.config import settings
 import logging
 import math
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
+from src.models.spot import Spot, SpotWithDistance
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,18 @@ class GeoService:
 
     def __init__(self, bot: Bot):
         self.bot = bot
+        self.tz_finder = TimezoneFinder()
         self.cache = {}  # Временный кеш: {user_id: (latitude, longitude, timestamp)}
+
+    async def get_timezone(self, latitude: float, longitude: float) -> Optional[str]:
+        """Определяет часовой пояс по координатам."""
+        try:
+            timezone = self.tz_finder.timezone_at(lat=latitude, lng=longitude)
+            logger.info(f"Часовой пояс для ({latitude}, {longitude}): {timezone}")
+            return timezone if timezone else None
+        except Exception as e:
+            logger.error(f"Ошибка при определении часового пояса: {e}")
+            return None
 
     async def request_location(
         self, message: Message, state: FSMContext, user_id: int
@@ -33,7 +45,10 @@ class GeoService:
                 resize_keyboard=True,
                 one_time_keyboard=True,
             )
-            await message.answer("Отправьте вашу геолокацию:", reply_markup=keyboard)
+            await message.answer(
+                "🌊 Йо, бро! Отправь свою геолокацию, чтобы мы знали твой часовой пояс! 📍",
+                reply_markup=keyboard,
+            )
             return None
         except Exception as e:
             logger.error(
@@ -54,7 +69,9 @@ class GeoService:
                 logger.warning(
                     f"Сообщение не содержит геолокацию для пользователя {user_id}"
                 )
-                await message.answer("Пожалуйста, отправьте геолокацию.")
+                await message.answer(
+                    "🌊 Упс, волна унесла твою геолокацию! 😎 Отправь ещё раз, бро!"
+                )
                 return None
             latitude = message.location.latitude
             longitude = message.location.longitude

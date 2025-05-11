@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from pydantic.config import ConfigDict
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
 from typing import Optional
 
 
@@ -10,5 +10,6 @@ class User(BaseModel):
     name: str
     username: Optional[str] = None
     timezone: Optional[str] = None
+    created_at: Optional[datetime] = None
 
-    model_config = ConfigDict(extra="allow", from_attributes=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True)

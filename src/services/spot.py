@@ -3,9 +3,25 @@ from src.models.spot import Spot
 from src.repositories.spot import SpotRepository
 from src.services.geo import GeoService
 from src.config.config import settings
+from dataclasses import dataclass
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Spot:
+    id: int
+    name: str
+    latitude: float
+    longitude: float
+    created_by: int = None
+
+
+@dataclass
+class SpotWithDistance:
+    spot: Spot
+    distance: float
 
 
 class SpotService:

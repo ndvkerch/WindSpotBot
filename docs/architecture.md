@@ -8,7 +8,7 @@
 - `services/`: Бизнес-логика:
   - `CheckinService`: Управление чек-инами (создание, получение активных пользователей).
   - `SpotService`: Управление спотами (поиск, добавление, кэширование).
-  - `GeoService`: Работа с геолокацией (расчёт расстояний, кэширование координат).
+  - `GeoService`: Работа с геолокацией (определение часового пояса, кэширование координат).
   - `NotificationService`: Отправка уведомлений подписчикам (чек-ины, сообщения, погода).
   - `ChatService`: Отправка/получение сообщений в темах спотов, создание тем.
   - `TopicService`: Управление темами в Telegram.
@@ -23,7 +23,7 @@
   - `CheckinRepository`: Чек-ины (создание, получение по пользователю и споту).
   - `SubscriptionRepository`: Подписки.
 - `models/`: Pydantic-модели:
-  - `User`: Пользователь.
+  - `User`: Пользователь (id, name, username, timezone, created_at).
   - `Spot`: Спот.
   - `SpotWithDistance`: Спот с расстоянием до пользователя.
   - `Checkin`: Чек-ин.
@@ -33,7 +33,8 @@
 - `config/`: Конфигурация:
   - `config.py`: Загрузка `.env`.
   - `topics.py`: Настройки тем (если используется).
-
+- `database/`: Инициализация базы данных:  
+  - `init.py`: Создание базы.
 ## Схема взаимодействия
 
 ```
@@ -58,7 +59,7 @@ Handlers -> Services -> Repositories -> SQLite (data/database.db)
 
 - SQLite: `data/database.db`.
 - Таблицы:
-  - `users`: Пользователи (id, username, created_at).
+  - `users`: Пользователи (id, name, username, timezone, created_at).
   - `spots`: Споты (id, name, latitude, longitude, description, created_by).
   - `checkins`: Чек-ины (id, user_id, spot_id, type, duration, created_at, active_until, planned_at).
   - `subscriptions`: Подписки (user_id, spot_id, created_at).
