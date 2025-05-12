@@ -9,6 +9,7 @@ from src.services.checkin import CheckinService
 from src.services.weather import WeatherService
 from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
+from src.repositories.user import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ def register_main_menu_handlers(
     checkin_service: CheckinService,
     weather_service: WeatherService,
     chat_service: ChatService,
+    user_repo: UserRepository,
 ):
     """Регистрация обработчиков для callback-запросов главного меню."""
 
@@ -178,7 +180,12 @@ def register_main_menu_handlers(
         await state.clear()
 
     @dp.message(SpotsStates.requesting_location)
-    async def process_spots_location(message: Message, state: FSMContext):
+    async def process_spots_location(
+        message: Message,
+        state: FSMContext,
+        user_repo: UserRepository,
+        geo_service: GeoService,
+    ):
         """Обработка геолокации для ближайших спотов."""
         user_id = message.from_user.id
         logger.info(f"Получена геолокация для спотов от пользователя {user_id}")
@@ -188,6 +195,15 @@ def register_main_menu_handlers(
         latitude = message.location.latitude
         longitude = message.location.longitude
         await geo_service.cache_location(user_id, latitude, longitude)
+        timezone = await geo_service.get_timezone(latitude, longitude)
+        if timezone:
+            await user_repo.create(
+                user_id=user_id,
+                name=message.from_user.full_name,
+                username=message.from_user.username,
+                timezone=timezone,
+            )
+            logger.info(f"Часовой пояс {timezone} сохранен для пользователя {user_id}")
         spots = await spot_service.get_all_spots()
         nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
         if not nearby_spots:

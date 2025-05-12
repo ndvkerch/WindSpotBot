@@ -41,17 +41,10 @@ def register_start_handlers(
             "💬 Заходи в @WindSpotRU, там волна новостей и движухи!"
         )
 
-        # Проверка, есть ли часовой пояс
-        db_user = await user_repo.get_by_id(user_id)
-        if db_user and db_user.timezone:
-            # Показ главного меню
-            kb = MainKeyboards.get_main_menu()
-            await message.answer("Выберите действие:", reply_markup=kb)
-            await state.clear()
-        else:
-            # Запрос геолокации
-            await geo_service.request_location(message, state, user_id)
-            await state.set_state(StartStates.requesting_location)
+        # Показ главного меню
+        kb = MainKeyboards.get_main_menu()
+        await message.answer("Выберите действие:", reply_markup=kb)
+        await state.clear()
 
     @dp.message(StartStates.requesting_location)
     async def process_start_location(

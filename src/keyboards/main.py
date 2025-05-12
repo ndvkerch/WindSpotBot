@@ -1,5 +1,6 @@
 import logging
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from src.models.spot import Spot, SpotWithDistance
 from typing import List
 
@@ -13,8 +14,8 @@ class MainKeyboards:
     def get_main_menu() -> InlineKeyboardMarkup:
         """Получение главного меню."""
         logger.info("Создание главного меню")
-        kb = InlineKeyboardMarkup(row_width=2)
-        kb.add(
+        builder = InlineKeyboardBuilder()
+        buttons = [
             InlineKeyboardButton(text="🏄‍♂️ Чек-ин", callback_data="checkin"),
             InlineKeyboardButton(text="🌊 Ближайшие споты", callback_data="spots"),
             InlineKeyboardButton(text="💨 Активность", callback_data="activity"),
@@ -23,8 +24,11 @@ class MainKeyboards:
             InlineKeyboardButton(text="📅 Планирование", callback_data="plan"),
             InlineKeyboardButton(text="📊 Профиль", callback_data="profile"),
             InlineKeyboardButton(text="🌦 Погода", callback_data="weather"),
-        )
-        return kb
+        ]
+        for button in buttons:
+            builder.add(button)
+        builder.adjust(2)  # 2 кнопки в ряду
+        return builder.as_markup()
 
     @staticmethod
     def get_checkin_types() -> InlineKeyboardMarkup:
