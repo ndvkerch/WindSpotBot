@@ -20,12 +20,6 @@ class SpotsStates(StatesGroup):
     requesting_location = State()
 
 
-class CheckinStates(StatesGroup):
-    """Состояния для процесса чек-ина."""
-
-    requesting_location = State()
-
-
 class AddSpotStates(StatesGroup):
     """Состояния для добавления спота."""
 
@@ -102,34 +96,6 @@ def register_main_menu_handlers(
         else:
             await geo_service.request_location(callback.message, state, user_id)
             await state.set_state(SpotsStates.requesting_location)
-        await callback.answer()
-
-    @dp.callback_query(lambda c: c.data == "checkin")
-    async def callback_checkin(callback: CallbackQuery, state: FSMContext):
-        """Обработка нажатия кнопки 'Чек-ин'."""
-        user_id = callback.from_user.id
-        logger.info(f"Callback 'checkin' от пользователя {user_id}")
-        await state.clear()
-        cached_location = await geo_service.get_cached_location(user_id)
-        if cached_location:
-            latitude, longitude = cached_location
-            logger.info(f"Использован кэш: ({latitude}, {longitude})")
-            spots = await spot_service.get_all_spots()
-            nearby_spots = await geo_service.get_nearby_spots(
-                spots, latitude, longitude
-            )
-            if not nearby_spots:
-                await callback.message.answer(
-                    "Споты не найдены. Добавьте споты через /add_spot."
-                )
-            else:
-                await state.update_data(latitude=latitude, longitude=longitude)
-                kb = MainKeyboards.get_spots_list(nearby_spots)
-                await callback.message.answer("Выберите спот:", reply_markup=kb)
-                await state.set_state(CheckinStates.requesting_location)
-        else:
-            await geo_service.request_location(callback.message, state, user_id)
-            await state.set_state(CheckinStates.requesting_location)
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "add_spot")
@@ -211,25 +177,4 @@ def register_main_menu_handlers(
         else:
             kb = MainKeyboards.get_spots_list(nearby_spots)
             await message.answer("Ближайшие споты:", reply_markup=kb)
-        await state.clear()
-
-    @dp.message(CheckinStates.requesting_location)
-    async def process_checkin_location(message: Message, state: FSMContext):
-        """Обработка геолокации для чек-ина."""
-        user_id = message.from_user.id
-        logger.info(f"Получена геолокация для чек-ина от пользователя {user_id}")
-        if not message.location:
-            await message.answer("Пожалуйста, отправьте геолокацию.")
-            return
-        latitude = message.location.latitude
-        longitude = message.location.longitude
-        await geo_service.cache_location(user_id, latitude, longitude)
-        spots = await spot_service.get_all_spots()
-        nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
-        if not nearby_spots:
-            await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
-        else:
-            await state.update_data(latitude=latitude, longitude=longitude)
-            kb = MainKeyboards.get_spots_list(nearby_spots)
-            await message.answer("Выберите спот:", reply_markup=kb)
         await state.clear()

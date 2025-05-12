@@ -3,7 +3,7 @@ from aiogram import Dispatcher
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State
+from aiogram.fsm.state import State, StatesGroup
 from src.services.geo import GeoService
 from src.services.spot import SpotService
 from src.services.checkin import CheckinService
@@ -11,6 +11,14 @@ from src.models.user import User
 from src.keyboards.main import MainKeyboards
 
 logger = logging.getLogger(__name__)
+
+
+class CheckinStates(StatesGroup):
+    """Состояния для процесса чек-ина."""
+
+    requesting_location = State()
+    selecting_spot = State()
+    selecting_type = State()
 
 
 def register_checkin_handlers(
@@ -43,50 +51,37 @@ def register_checkin_handlers(
             kb = MainKeyboards.get_spots_list(nearby_spots)
             await state.update_data(latitude=latitude, longitude=longitude)
             await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
-            await state.set_state(State("CheckinStates:selecting_spot"))
+            await state.set_state(CheckinStates.selecting_spot)
         else:
             await geo_service.request_location(message, state, user_id)
-            await state.set_state(State("CheckinStates:requesting_location"))
+            await state.set_state(CheckinStates.requesting_location)
 
-    @dp.message(State("CheckinStates:requesting_location"))
+    @dp.message(CheckinStates.requesting_location)
     async def process_checkin_location(message: Message, state: FSMContext):
         """Обработка геолокации для чек-ина."""
         user_id = message.from_user.id
         logger.info(f"Обработка геолокации для чек-ина от пользователя {user_id}")
-        if message.content_type not in ["location", "venue"]:
-            logger.warning(f"Получен неверный тип контента: {message.content_type}")
-            await message.answer("Пожалуйста, отправьте геолокацию или место.")
+        if not message.location:
+            logger.warning("Получен неверный тип контента: не геолокация")
+            await message.answer("Пожалуйста, отправьте геолокацию.")
             return
-        if message.content_type == "location":
-            location = await geo_service.process_location(message, state)
-        else:
-            latitude = message.venue.location.latitude
-            longitude = message.venue.location.longitude
-            await geo_service.cache_location(user_id, latitude, longitude)
-            location = (latitude, longitude)
-        if location:
-            latitude, longitude = location
-            logger.info(f"Получена геолокация: ({latitude}, {longitude})")
-            spots = await spot_service.get_all_spots()
-            nearby_spots = await geo_service.get_nearby_spots(
-                spots, latitude, longitude
-            )
-            if not nearby_spots:
-                await message.answer(
-                    "Споты не найдены. Добавьте споты через /add_spot."
-                )
-                return
-            kb = MainKeyboards.get_spots_list(nearby_spots)
-            await state.update_data(latitude=latitude, longitude=longitude)
-            await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
-            await state.set_state(State("CheckinStates:selecting_spot"))
-        else:
-            logger.error("Не удалось обработать геолокацию")
-            await message.answer("Ошибка при обработке геолокации.")
+        latitude = message.location.latitude
+        longitude = message.location.longitude
+        await geo_service.cache_location(user_id, latitude, longitude)
+        logger.info(f"Получена геолокация: ({latitude}, {longitude})")
+        spots = await spot_service.get_all_spots()
+        nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
+        if not nearby_spots:
+            await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
+            await state.clear()
+            return
+        kb = MainKeyboards.get_spots_list(nearby_spots)
+        await state.update_data(latitude=latitude, longitude=longitude)
+        await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+        await state.set_state(CheckinStates.selecting_spot)
 
     @dp.callback_query(
-        lambda c: c.data and c.data.startswith("spot:"),
-        State("CheckinStates:selecting_spot"),
+        lambda c: c.data and c.data.startswith("spot:"), CheckinStates.selecting_spot
     )
     async def callback_spot(callback: CallbackQuery, state: FSMContext):
         """Обработка выбора спота."""
@@ -97,24 +92,25 @@ def register_checkin_handlers(
             spot = await spot_service.get_spot_by_id(spot_id)
             if not spot:
                 await callback.message.edit_text(f"Спот с ID {spot_id} не найден.")
+                await state.clear()
                 return
             kb = MainKeyboards.get_checkin_types()
             await callback.message.edit_text(
                 f"Вы выбрали спот '{spot.name}'. Тип чек-ина:", reply_markup=kb
             )
             await state.update_data(spot_id=spot.id)
-            await state.set_state(State("CheckinStates:selecting_type"))
+            await state.set_state(CheckinStates.selecting_type)
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_spot: {e}")
             await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
+            await state.clear()
 
     @dp.callback_query(
-        lambda c: c.data and c.data.startswith("checkin:"),
-        State("CheckinStates:selecting_type"),
+        lambda c: c.data and c.data.startswith("checkin:"), CheckinStates.selecting_type
     )
-    async def callback_checkin(callback: CallbackQuery, state: FSMContext):
-        """Обработка чек-ина."""
+    async def callback_checkin_type(callback: CallbackQuery, state: FSMContext):
+        """Обработка выбора типа чек-ина."""
         user_id = callback.from_user.id
         logger.info(f"Выбор типа чек-ина: {callback.data} пользователем {user_id}")
         try:
@@ -122,6 +118,7 @@ def register_checkin_handlers(
             spot_id = data.get("spot_id")
             if not spot_id:
                 await callback.message.edit_text("Ошибка: спот не выбран.")
+                await state.clear()
                 return
             checkin_type = int(callback.data.split(":", 1)[1])
             user = User(
@@ -129,11 +126,11 @@ def register_checkin_handlers(
                 name=callback.from_user.full_name,
                 username=callback.from_user.username,
             )
-            checkin_id = await checkin_service.create_checkin(
+            success = await checkin_service.create_checkin(
                 user, spot_id, checkin_type, duration=3600
             )
             spot = await spot_service.get_spot_by_id(spot_id)
-            if checkin_id:
+            if success:
                 await callback.message.edit_text(
                     f"Чек-ин на споте '{spot.name}' успешно создан!"
                 )
@@ -144,7 +141,7 @@ def register_checkin_handlers(
             await state.clear()
             await callback.answer()
         except Exception as e:
-            logger.error(f"Ошибка в callback_checkin: {e}")
+            logger.error(f"Ошибка в callback_checkin_type: {e}")
             await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
             await state.clear()
 
@@ -155,7 +152,7 @@ def register_checkin_handlers(
         logger.info(f"Нажата кнопка 'Назад' от пользователя {user_id}")
         await state.clear()
         await geo_service.request_location(callback.message, state, user_id)
-        await state.set_state(State("CheckinStates:requesting_location"))
+        await state.set_state(CheckinStates.requesting_location)
         await callback.message.edit_text("Пожалуйста, отправьте геолокацию.")
         await callback.answer()
 
@@ -182,13 +179,13 @@ def register_checkin_handlers(
             await callback.message.edit_text(
                 "Выберите спот для чек-ина:", reply_markup=kb
             )
-            await state.set_state(State("CheckinStates:selecting_spot"))
+            await state.set_state(CheckinStates.selecting_spot)
         else:
             await callback.message.edit_text(
                 "Геолокация не найдена. Отправьте геолокацию заново."
             )
             await geo_service.request_location(callback.message, state, user_id)
-            await state.set_state(State("CheckinStates:requesting_location"))
+            await state.set_state(CheckinStates.requesting_location)
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "main_menu")

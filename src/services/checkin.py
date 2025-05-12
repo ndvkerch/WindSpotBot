@@ -1,11 +1,14 @@
 from aiogram import Bot
 from src.models.checkin import Checkin
 from src.repositories.checkin import CheckinRepository
+from src.repositories.user import UserRepository
 from src.services.notification import NotificationService
 from src.services.spot import SpotService
 from src.models.user import User
 from datetime import datetime, timedelta
 import logging
+
+logger = logging.getLogger(__name__)
 
 
 class CheckinService:
@@ -17,11 +20,13 @@ class CheckinService:
         checkin_repo: CheckinRepository,
         notification_service: NotificationService,
         spot_service: SpotService,
+        user_repo: UserRepository,
     ):
         self.bot = bot
         self.checkin_repo = checkin_repo
         self.notification_service = notification_service
         self.spot_service = spot_service
+        self.user_repo = user_repo
 
     async def create_checkin(
         self, user: User, spot_id: int, checkin_type: int, duration: int = 3600
@@ -30,7 +35,7 @@ class CheckinService:
         try:
             spot = await self.spot_service.get_spot_by_id(spot_id)
             if not spot:
-                logging.error(f"Спот с id {spot_id} не найден")
+                logger.error(f"Спот с id {spot_id} не найден")
                 return False
 
             now = datetime.utcnow()
@@ -55,12 +60,12 @@ class CheckinService:
             )
             checkin_id = await self.checkin_repo.create(checkin)
             await self.notification_service.send_checkin_notification(user, spot.name)
-            logging.info(
+            logger.info(
                 f"Чек-ин #{checkin_id} создан для пользователя {user.id} на споте id {spot_id}"
             )
             return True
         except Exception as e:
-            logging.error(f"Ошибка при создании чек-ина для спота id {spot_id}: {e}")
+            logger.error(f"Ошибка при создании чек-ина для спота id {spot_id}: {e}")
             return False
 
     async def get_active_users(self, spot_id: int) -> tuple[list[User], list[User]]:
@@ -71,9 +76,14 @@ class CheckinService:
             on_spot = []
             planning = []
             for checkin in checkins:
+                user_data = await self.user_repo.get_by_id(checkin.user_id)
+                if not user_data:
+                    continue
                 user = User(
-                    id=checkin.user_id, name="", username=""
-                )  # TODO: Получать имя/ник
+                    id=checkin.user_id,
+                    name=user_data.name,
+                    username=user_data.username,
+                )
                 if (
                     checkin.type == 1
                     and checkin.active_until
@@ -86,9 +96,12 @@ class CheckinService:
                     and now < checkin.planned_at
                 ):
                     planning.append(user)
+            logger.info(
+                f"Найдено {len(on_spot)} активных и {len(planning)} планирующих для спота id {spot_id}"
+            )
             return on_spot, planning
         except Exception as e:
-            logging.error(
+            logger.error(
                 f"Ошибка при получении пользователей для спота id {spot_id}: {e}"
             )
             return [], []
