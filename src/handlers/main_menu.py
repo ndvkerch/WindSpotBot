@@ -10,6 +10,7 @@ from src.services.weather import WeatherService
 from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
 from src.repositories.user import UserRepository
+from src.handlers.checkin import CheckinStates
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,35 @@ def register_main_menu_handlers(
     user_repo: UserRepository,
 ):
     """Регистрация обработчиков для callback-запросов главного меню."""
+
+    @dp.callback_query(lambda c: c.data == "checkin")
+    async def callback_checkin(callback: CallbackQuery, state: FSMContext):
+        """Обработка нажатия кнопки 'Чек-ин'."""
+        user_id = callback.from_user.id
+        logger.info(f"Callback 'checkin' от пользователя {user_id}")
+        await state.clear()
+        cached_location = await geo_service.get_cached_location(user_id)
+        if cached_location:
+            latitude, longitude = cached_location
+            logger.info(f"Использован кэш: ({latitude}, {longitude})")
+            spots = await spot_service.get_all_spots()
+            nearby_spots = await geo_service.get_nearby_spots(
+                spots, latitude, longitude
+            )
+            if not nearby_spots:
+                await callback.message.answer(
+                    "Споты не найдены. Добавьте споты через /add_spot."
+                )
+                await callback.answer()
+                return
+            kb = MainKeyboards.get_spots_list(nearby_spots)
+            await state.update_data(latitude=latitude, longitude=longitude)
+            await callback.message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+            await state.set_state(CheckinStates.selecting_spot)
+        else:
+            await geo_service.request_location(callback.message, state, user_id)
+            await state.set_state(CheckinStates.requesting_location)
+        await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "activity")
     async def callback_activity(callback: CallbackQuery, state: FSMContext):
@@ -176,5 +206,5 @@ def register_main_menu_handlers(
             await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
         else:
             kb = MainKeyboards.get_spots_list(nearby_spots)
-            await message.answer("Ближайшие споты:", reply_markup=kb)
+            await callback.message.answer("Ближайшие споты:", reply_markup=kb)
         await state.clear()
