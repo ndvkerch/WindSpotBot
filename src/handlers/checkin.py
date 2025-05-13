@@ -216,7 +216,7 @@ def register_checkin_handlers(
             await checkin_service.notification_service.send_checkout_notification(
                 user, spot.name
             )
-            await checkin_service.notification_service.send_spot_checkin_notification(
+            await checkin_service.notification_service.send_spot_checkout_notification(
                 user, spot.name
             )
             kb = MainKeyboards.get_main_menu()

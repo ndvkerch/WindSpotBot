@@ -58,6 +58,7 @@ class CheckinService:
             now = datetime.utcnow()
             previous_checkin = None
             previous_spot_name = None
+            logger.info(f"Найдено {len(checkins)} чек-инов для пользователя {user.id}")
             for checkin in checkins:
                 if (
                     checkin.type in [1, 2]
@@ -77,6 +78,9 @@ class CheckinService:
                         f"Завершен активный чек-ин #{checkin.id} типа {checkin.type} для пользователя {user.id} на споте {previous_spot_name}"
                     )
                     await self.notification_service.send_checkout_notification(
+                        user, previous_spot_name
+                    )
+                    await self.notification_service.send_spot_checkout_notification(
                         user, previous_spot_name
                     )
                     break
