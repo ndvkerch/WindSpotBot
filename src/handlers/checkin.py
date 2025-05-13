@@ -19,6 +19,7 @@ class CheckinStates(StatesGroup):
     requesting_location = State()
     selecting_spot = State()
     selecting_type = State()
+    selecting_duration = State()
 
 
 def register_checkin_handlers(
@@ -45,12 +46,12 @@ def register_checkin_handlers(
             )
             if not nearby_spots:
                 await message.answer(
-                    "Споты не найдены. Добавьте споты через /add_spot."
+                    "🤙 Йо, споты не найдены! Добавь новый через /add_spot! 🪁"
                 )
                 return
             kb = MainKeyboards.get_spots_list(nearby_spots)
             await state.update_data(latitude=latitude, longitude=longitude)
-            await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+            await message.answer("🏄‍♂️ Выбери спот для чек-ина:", reply_markup=kb)
             await state.set_state(CheckinStates.selecting_spot)
         else:
             await geo_service.request_location(message, state, user_id)
@@ -63,7 +64,7 @@ def register_checkin_handlers(
         logger.info(f"Обработка геолокации для чек-ина от пользователя {user_id}")
         if not message.location:
             logger.warning("Получен неверный тип контента: не геолокация")
-            await message.answer("Пожалуйста, отправьте геолокацию.")
+            await message.answer("🤙 Йо, отправь геолокацию, бро! 📍")
             return
         latitude = message.location.latitude
         longitude = message.location.longitude
@@ -72,12 +73,14 @@ def register_checkin_handlers(
         spots = await spot_service.get_all_spots()
         nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
         if not nearby_spots:
-            await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
+            await message.answer(
+                "🤙 Йо, споты не найдены! Добавь новый через /add_spot! 🪁"
+            )
             await state.clear()
             return
         kb = MainKeyboards.get_spots_list(nearby_spots)
         await state.update_data(latitude=latitude, longitude=longitude)
-        await message.answer("Выберите спот для чек-ина:", reply_markup=kb)
+        await message.answer("🏄‍♂️ Выбери спот для чек-ина:", reply_markup=kb)
         await state.set_state(CheckinStates.selecting_spot)
 
     @dp.callback_query(
@@ -91,19 +94,21 @@ def register_checkin_handlers(
             spot_id = int(callback.data.split(":", 1)[1])
             spot = await spot_service.get_spot_by_id(spot_id)
             if not spot:
-                await callback.message.edit_text(f"Спот с ID {spot_id} не найден.")
+                await callback.message.edit_text(
+                    f"🤙 Спот с ID {spot_id} не найден, бро! 😕"
+                )
                 await state.clear()
                 return
             kb = MainKeyboards.get_checkin_types()
             await callback.message.edit_text(
-                f"Вы выбрали спот '{spot.name}'. Тип чек-ина:", reply_markup=kb
+                f"🏄‍♂️ Йо, ты выбрал '{spot.name}'! Какой вайб? 💨", reply_markup=kb
             )
-            await state.update_data(spot_id=spot.id)
+            await state.update_data(spot_id=spot.id, spot_name=spot.name)
             await state.set_state(CheckinStates.selecting_type)
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_spot: {e}")
-            await callback.message.edit_text(f"Ошибка при выборе спота: {str(e)}")
+            await callback.message.edit_text(f"😕 Ошибка при выборе спота: {str(e)}")
             await state.clear()
 
     @dp.callback_query(
@@ -116,33 +121,117 @@ def register_checkin_handlers(
         try:
             data = await state.get_data()
             spot_id = data.get("spot_id")
+            spot_name = data.get("spot_name")
             if not spot_id:
-                await callback.message.edit_text("Ошибка: спот не выбран.")
+                await callback.message.edit_text("😕 Ошибка: спот не выбран, бро!")
                 await state.clear()
                 return
             checkin_type = int(callback.data.split(":", 1)[1])
+            if checkin_type == 1:  # На месте
+                kb = MainKeyboards.get_duration_options()
+                await callback.message.edit_text(
+                    f"✅ Йо, ты на '{spot_name}'! Лови вайб! 🏄‍♂️\nСколько тусить будешь?",
+                    reply_markup=kb,
+                )
+                await state.update_data(checkin_type=checkin_type)
+                await state.set_state(CheckinStates.selecting_duration)
+            else:
+                # Для типов 2 и 3 используем фиксированную длительность
+                user = User(
+                    id=user_id,
+                    name=callback.from_user.full_name,
+                    username=callback.from_user.username,
+                )
+                success = await checkin_service.create_checkin(
+                    user, spot_id, checkin_type, duration=3600
+                )
+                await state.clear()
+            await callback.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в callback_checkin_type: {e}")
+            await callback.message.edit_text(f"😕 Ошибка при чек-ине: {str(e)}")
+            await state.clear()
+
+    @dp.callback_query(
+        lambda c: c.data and c.data.startswith("duration:"),
+        CheckinStates.selecting_duration,
+    )
+    async def callback_duration(callback: CallbackQuery, state: FSMContext):
+        """Обработка выбора длительности чек-ина."""
+        user_id = callback.from_user.id
+        logger.info(f"Выбор длительности: {callback.data} пользователем {user_id}")
+        try:
+            data = await state.get_data()
+            spot_id = data.get("spot_id")
+            checkin_type = data.get("checkin_type")
+            if not spot_id or not checkin_type:
+                await callback.message.edit_text("😕 Ошибка: данные не найдены, бро!")
+                await state.clear()
+                return
+            duration_hours = int(callback.data.split(":", 1)[1])
+            duration_seconds = duration_hours * 3600
             user = User(
                 id=user_id,
                 name=callback.from_user.full_name,
                 username=callback.from_user.username,
             )
             success = await checkin_service.create_checkin(
-                user, spot_id, checkin_type, duration=3600
+                user, spot_id, checkin_type, duration=duration_seconds
             )
-            spot = await spot_service.get_spot_by_id(spot_id)
-            if success:
-                await callback.message.edit_text(
-                    f"Чек-ин на споте '{spot.name}' успешно создан!"
-                )
-            else:
-                await callback.message.edit_text(
-                    f"Ошибка при создании чек-ина на споте '{spot.name}'."
-                )
             await state.clear()
             await callback.answer()
         except Exception as e:
-            logger.error(f"Ошибка в callback_checkin_type: {e}")
-            await callback.message.edit_text(f"Ошибка при чек-ине: {str(e)}")
+            logger.error(f"Ошибка в callback_duration: {e}")
+            await callback.message.edit_text(
+                f"😕 Ошибка при выборе длительности: {str(e)}"
+            )
+            await state.clear()
+
+    @dp.callback_query(lambda c: c.data and c.data.startswith("leave_spot:"))
+    async def callback_leave_spot(callback: CallbackQuery, state: FSMContext):
+        """Обработка кнопки 'Покинуть спот'."""
+        user_id = callback.from_user.id
+        logger.info(
+            f"Нажата кнопка 'Покинуть спот': {callback.data} от пользователя {user_id}"
+        )
+        try:
+            checkin_id = int(callback.data.split(":", 1)[1])
+            checkins = await checkin_service.checkin_repo.get_by_user(user_id)
+            checkin = next((c for c in checkins if c.id == checkin_id), None)
+            if not checkin:
+                await callback.message.edit_text("😕 Чек-ин не найден, бро!")
+                await state.clear()
+                return
+            spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
+            if not spot:
+                await callback.message.edit_text("😕 Спот не найден, бро!")
+                await state.clear()
+                return
+            await checkin_service.checkin_repo.deactivate_checkin(checkin_id)
+            user = User(
+                id=user_id,
+                name=callback.from_user.full_name,
+                username=callback.from_user.username,
+            )
+            await checkin_service.notification_service.send_checkout_notification(
+                user, spot.name
+            )
+            await checkin_service.notification_service.send_spot_checkin_notification(
+                user, spot.name
+            )
+            kb = MainKeyboards.get_main_menu()
+            await callback.message.edit_text(
+                f"🚪 Йо, ты покинул '{spot.name}'! 💨 Лови главное меню! 🏄‍♂️",
+                reply_markup=kb,
+            )
+            logger.info(
+                f"Пользователь {user_id} покинул спот '{spot.name}' (чек-ин #{checkin_id})"
+            )
+            await state.clear()
+            await callback.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в callback_leave_spot: {e}")
+            await callback.message.edit_text(f"😕 Ошибка при покидании спота: {str(e)}")
             await state.clear()
 
     @dp.callback_query(lambda c: c.data == "back_to_location")
@@ -153,7 +242,7 @@ def register_checkin_handlers(
         await state.clear()
         await geo_service.request_location(callback.message, state, user_id)
         await state.set_state(CheckinStates.requesting_location)
-        await callback.message.edit_text("Пожалуйста, отправьте геолокацию.")
+        await callback.message.edit_text("🤙 Йо, отправь геолокацию, бро! 📍")
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "back_to_spots")
@@ -171,18 +260,18 @@ def register_checkin_handlers(
             )
             if not nearby_spots:
                 await callback.message.edit_text(
-                    "Споты не найдены. Добавьте споты через /add_spot."
+                    "🤙 Йо, споты не найдены! Добавь новый через /add_spot! 🪁"
                 )
                 await state.clear()
                 return
             kb = MainKeyboards.get_spots_list(nearby_spots)
             await callback.message.edit_text(
-                "Выберите спот для чек-ина:", reply_markup=kb
+                "🏄‍♂️ Выбери спот для чек-ина:", reply_markup=kb
             )
             await state.set_state(CheckinStates.selecting_spot)
         else:
             await callback.message.edit_text(
-                "Геолокация не найдена. Отправьте геолокацию заново."
+                "😕 Геолокация не найдена. Отправь заново, бро!"
             )
             await geo_service.request_location(callback.message, state, user_id)
             await state.set_state(CheckinStates.requesting_location)
@@ -196,8 +285,8 @@ def register_checkin_handlers(
         await state.clear()
         kb = MainKeyboards.get_main_menu()
         await callback.message.edit_text(
-            "Добро пожаловать в WindSpotBot! 🏄‍♂️\n"
-            "Найдите споты для виндсёрфинга, отметьтесь или подпишитесь на уведомления!",
+            "🤙 Йо, бро! Лови главное меню WindSpotBot! 🏄‍♂️\n"
+            "Найди спот, чек-инься или туси в @WindSpotRU! 💨",
             reply_markup=kb,
         )
         await callback.answer()
