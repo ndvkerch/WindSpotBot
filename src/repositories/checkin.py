@@ -84,3 +84,21 @@ class CheckinRepository:
         except Exception as e:
             logger.error(f"Ошибка при получении чек-инов для спота id {spot_id}: {e}")
             return []
+
+    async def deactivate_checkin(self, checkin_id: int) -> bool:
+        """Деактивация чек-ина."""
+        try:
+            async with self.db.execute(
+                "UPDATE checkins SET active_until = ? WHERE id = ?",
+                (datetime.utcnow().isoformat(), checkin_id),
+            ) as cursor:
+                await self.db.commit()
+                if cursor.rowcount > 0:
+                    logger.info(f"Чек-ин #{checkin_id} деактивирован")
+                    return True
+                else:
+                    logger.warning(f"Чек-ин #{checkin_id} не найден")
+                    return False
+        except Exception as e:
+            logger.error(f"Ошибка при деактивации чек-ина #{checkin_id}: {e}")
+            return False
