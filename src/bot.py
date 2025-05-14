@@ -76,7 +76,12 @@ async def main():
             spot_service = SpotService(spot_repo, geo_service)
             weather_service = WeatherService(http_session=http_session)
             checkin_service = CheckinService(
-                bot, checkin_repo, notification_service, spot_service, user_repo
+                bot,
+                checkin_repo,
+                notification_service,
+                spot_service,
+                user_repo,
+                weather_service,
             )
 
             @dp.error()

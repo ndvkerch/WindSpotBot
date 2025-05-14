@@ -31,18 +31,67 @@ class MainKeyboards:
         return builder.as_markup()
 
     @staticmethod
+    def get_post_checkin_menu(checkin_id: int) -> InlineKeyboardMarkup:
+        """Клавиатура после чек-ина."""
+        logger.info(f"Создание клавиатуры после чек-ина #{checkin_id}")
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🚪 Покинуть спот",
+                        callback_data=f"leave_spot:{checkin_id}",
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🏠 В главное меню", callback_data="main_menu"
+                    )
+                ],
+            ]
+        )
+        return kb
+
+    @staticmethod
     def get_checkin_types() -> InlineKeyboardMarkup:
         """Клавиатура для типов чек-инов."""
         logger.info("Создание клавиатуры типов чек-инов")
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="На месте", callback_data="checkin:1")],
-                [InlineKeyboardButton(text="Прибуду", callback_data="checkin:2")],
-                [InlineKeyboardButton(text="Планирую", callback_data="checkin:3")],
-                [InlineKeyboardButton(text="Назад", callback_data="back_to_spots")],
+                [InlineKeyboardButton(text="✅ На месте", callback_data="checkin:1")],
+                [InlineKeyboardButton(text="⏳ Прибуду", callback_data="checkin:2")],
+                [InlineKeyboardButton(text="📅 Планирую", callback_data="checkin:3")],
+                [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots")],
                 [
                     InlineKeyboardButton(
-                        text="В главное меню", callback_data="main_menu"
+                        text="🏠 В главное меню", callback_data="main_menu"
+                    )
+                ],
+            ]
+        )
+        return kb
+
+    @staticmethod
+    def get_duration_options() -> InlineKeyboardMarkup:
+        """Клавиатура для выбора длительности чек-ина."""
+        logger.info("Создание клавиатуры длительности чек-ина")
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(text="1 час", callback_data="duration:1"),
+                    InlineKeyboardButton(text="2 часа", callback_data="duration:2"),
+                ],
+                [
+                    InlineKeyboardButton(text="3 часа", callback_data="duration:3"),
+                    InlineKeyboardButton(text="4 часа", callback_data="duration:4"),
+                ],
+                [
+                    InlineKeyboardButton(text="5 часов", callback_data="duration:5"),
+                    InlineKeyboardButton(text="6 часов", callback_data="duration:6"),
+                ],
+                [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots")],
+                [
+                    InlineKeyboardButton(
+                        text="🏠 В главное меню", callback_data="main_menu"
                     )
                 ],
             ]
@@ -105,10 +154,10 @@ class MainKeyboards:
                 ]
             )
         inline_keyboard.append(
-            [InlineKeyboardButton(text="Назад", callback_data="back_to_location")]
+            [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_location")]
         )
         inline_keyboard.append(
-            [InlineKeyboardButton(text="В главное меню", callback_data="main_menu")]
+            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu")]
         )
         kb = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
         logger.info(f"Клавиатура спотов создана: {len(inline_keyboard)} кнопок")

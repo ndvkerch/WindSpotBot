@@ -4,7 +4,9 @@ from src.repositories.checkin import CheckinRepository
 from src.repositories.user import UserRepository
 from src.services.notification import NotificationService
 from src.services.spot import SpotService
+from src.services.weather import WeatherService
 from src.models.user import User
+from src.keyboards.main import MainKeyboards
 from datetime import datetime, timedelta
 import logging
 
@@ -21,24 +23,69 @@ class CheckinService:
         notification_service: NotificationService,
         spot_service: SpotService,
         user_repo: UserRepository,
+        weather_service: WeatherService,
     ):
         self.bot = bot
         self.checkin_repo = checkin_repo
         self.notification_service = notification_service
         self.spot_service = spot_service
         self.user_repo = user_repo
+        self.weather_service = weather_service
 
     async def create_checkin(
         self, user: User, spot_id: int, checkin_type: int, duration: int = 3600
     ) -> bool:
-        """Создание чек-ина."""
+        """Создание чек-ина с автоматическим расчек-ином, если есть активный."""
         try:
+            # Проверка существования спота
             spot = await self.spot_service.get_spot_by_id(spot_id)
             if not spot:
                 logger.error(f"Спот с id {spot_id} не найден")
+                await self.bot.send_message(
+                    user.id, f"😕 Спот с ID {spot_id} не найден, бро!"
+                )
                 return False
 
+            # Проверка существования пользователя
+            user_data = await self.user_repo.get_by_id(user.id)
+            if not user_data:
+                logger.error(f"Пользователь с id {user.id} не найден")
+                await self.bot.send_message(user.id, f"😕 Пользователь не найден, бро!")
+                return False
+
+            # Проверка активных чек-инов
+            checkins = await self.checkin_repo.get_by_user(user.id)
             now = datetime.utcnow()
+            previous_checkin = None
+            previous_spot_name = None
+            logger.info(f"Найдено {len(checkins)} чек-инов для пользователя {user.id}")
+            for checkin in checkins:
+                if (
+                    checkin.type in [1, 2]
+                    and checkin.active_until
+                    and now < checkin.active_until
+                ):
+                    previous_checkin = checkin
+                    previous_spot = await self.spot_service.get_spot_by_id(
+                        checkin.spot_id
+                    )
+                    previous_spot_name = (
+                        previous_spot.name if previous_spot else "Неизвестный спот"
+                    )
+                    # Завершаем существующий чек-ин
+                    await self.checkin_repo.deactivate_checkin(checkin.id)
+                    logger.info(
+                        f"Завершен активный чек-ин #{checkin.id} типа {checkin.type} для пользователя {user.id} на споте {previous_spot_name}"
+                    )
+                    await self.notification_service.send_checkout_notification(
+                        user, previous_spot_name
+                    )
+                    await self.notification_service.send_spot_checkout_notification(
+                        user, previous_spot_name
+                    )
+                    break
+
+            # Определение времени активности и планирования
             active_until = (
                 now + timedelta(seconds=duration) if checkin_type in [1, 2] else None
             )
@@ -48,6 +95,7 @@ class CheckinService:
                 else (now + timedelta(days=1) if checkin_type == 3 else None)
             )
 
+            # Создание нового чек-ина
             checkin = Checkin(
                 id=0,  # Автоинкремент
                 user_id=user.id,
@@ -59,13 +107,44 @@ class CheckinService:
                 planned_at=planned_at,
             )
             checkin_id = await self.checkin_repo.create(checkin)
+
+            # Получение данных для сообщения
+            on_spot, planning = await self.get_active_users(spot_id)
+
+            # Отправка уведомления о новом чек-ине
             await self.notification_service.send_checkin_notification(user, spot.name)
+            await self.notification_service.send_spot_checkin_notification(
+                user, spot.name
+            )
+
+            # Формирование сообщения
+            hours = duration // 3600
+            if previous_checkin:
+                message = (
+                    f"🚪 Йо, ты покинул '{previous_spot_name}'! ✅ Теперь ты зачекинился на '{spot.name}'! Лови вайб на {hours} ч! 🏄‍♂️\n"
+                    f"💨 На споте: {len(on_spot)}\n"
+                    f"📅 Планируют подтянуться: {len(planning)}"
+                )
+            else:
+                message = (
+                    f"✅ Йо, ты зачекинился на '{spot.name}'! Лови вайб на {hours} ч! 🏄‍♂️\n"
+                    f"💨 На споте: {len(on_spot)}\n"
+                    f"📅 Планируют подтянуться: {len(planning)}"
+                )
+            kb = MainKeyboards.get_post_checkin_menu(checkin_id)
+            await self.bot.send_message(
+                user.id, message, reply_markup=kb, parse_mode="HTML"
+            )
             logger.info(
                 f"Чек-ин #{checkin_id} создан для пользователя {user.id} на споте id {spot_id}"
             )
             return True
+
         except Exception as e:
             logger.error(f"Ошибка при создании чек-ина для спота id {spot_id}: {e}")
+            await self.bot.send_message(
+                user.id, f"😕 Ошибка при чек-ине, бро: {str(e)}"
+            )
             return False
 
     async def get_active_users(self, spot_id: int) -> tuple[list[User], list[User]]:
