@@ -20,10 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # Пропускаем добавление столбца, так как он уже существует
-    pass
+    op.add_column("spots", sa.Column("created_by", sa.Integer, nullable=False))
 
 
 def downgrade():
-    # Оставляем возможность отката
     op.drop_column("spots", "created_by")
