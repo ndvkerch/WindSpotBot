@@ -8,6 +8,7 @@ import math
 from typing import List, Optional, Tuple
 from datetime import datetime, timedelta
 from src.models.spot import Spot, SpotWithDistance
+import pytz
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +26,20 @@ class GeoService:
         try:
             timezone = self.tz_finder.timezone_at(lat=latitude, lng=longitude)
             logger.info(f"Часовой пояс для ({latitude}, {longitude}): {timezone}")
-            return timezone if timezone else None
+            if timezone:
+                # Преобразуем в формат UTC+XX:00
+                tz = pytz.timezone(timezone)
+                offset = tz.utcoffset(datetime.utcnow())
+                if offset:
+                    hours = int(offset.total_seconds() / 3600)
+                    return f"UTC{'+' if hours >= 0 else ''}{hours:02d}:00"
+            logger.warning(
+                f"Не удалось определить часовой пояс для ({latitude}, {longitude})"
+            )
+            return "UTC"  # Значение по умолчанию
         except Exception as e:
             logger.error(f"Ошибка при определении часового пояса: {e}")
-            return None
+            return "UTC"
 
     async def request_location(
         self, message: Message, state: FSMContext, user_id: int

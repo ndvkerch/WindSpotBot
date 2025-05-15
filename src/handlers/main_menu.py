@@ -1,6 +1,12 @@
 import logging
 from aiogram import Dispatcher
-from aiogram.types import CallbackQuery, Message, Location
+from aiogram.types import (
+    CallbackQuery,
+    Message,
+    Location,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+)
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from src.services.geo import GeoService
@@ -12,26 +18,40 @@ from src.keyboards.main import MainKeyboards
 from src.repositories.user import UserRepository
 from src.handlers.checkin import CheckinStates
 from src.repositories.checkin import CheckinRepository
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
+
 class SpotsStates(StatesGroup):
     """Состояния для просмотра спотов."""
+
     requesting_location = State()
+
 
 class AddSpotStates(StatesGroup):
     """Состояния для добавления спота."""
+
     entering_name = State()
+
 
 class ActivityStates(StatesGroup):
     """Состояния для активности."""
+
     requesting_location = State()
+
 
 def register_main_menu_handlers(dp: Dispatcher):
     """Регистрация обработчиков для callback-запросов главного меню."""
 
     @dp.callback_query(lambda c: c.data == "checkin")
-    async def callback_checkin(callback: CallbackQuery, state: FSMContext, geo_service: GeoService, spot_service: SpotService):
+    async def callback_checkin(
+        callback: CallbackQuery,
+        state: FSMContext,
+        geo_service: GeoService,
+        spot_service: SpotService,
+    ):
         """Обработка нажатия кнопки 'Чек-ин'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'checkin' от пользователя {user_id}")
@@ -78,6 +98,7 @@ def register_main_menu_handlers(dp: Dispatcher):
             latitude, longitude = cached_location
             logger.info(f"Использован кэш: ({latitude}, {longitude})")
             from src.handlers.activity import show_activity
+
             await show_activity(
                 callback.message,
                 latitude,
@@ -96,7 +117,12 @@ def register_main_menu_handlers(dp: Dispatcher):
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "spots")
-    async def callback_spots(callback: CallbackQuery, state: FSMContext, geo_service: GeoService, spot_service: SpotService):
+    async def callback_spots(
+        callback: CallbackQuery,
+        state: FSMContext,
+        geo_service: GeoService,
+        spot_service: SpotService,
+    ):
         """Обработка нажатия кнопки 'Ближайшие споты'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'spots' от пользователя {user_id}")
@@ -131,8 +157,106 @@ def register_main_menu_handlers(dp: Dispatcher):
         await state.set_state(AddSpotStates.entering_name)
         await callback.answer()
 
+    @dp.callback_query(lambda c: c.data in ["plan", "refresh_plan"])
+    async def callback_plan(
+        callback: CallbackQuery,
+        state: FSMContext,
+        checkin_service: CheckinService,
+        user_repo: UserRepository,
+    ):
+        """Обработка нажатия кнопки 'Планирование' или 'Обновить'."""
+        user_id = callback.from_user.id
+        logger.info(f"Callback 'plan' или 'refresh_plan' от пользователя {user_id}")
+        await state.clear()
+
+        try:
+            await callback.message.delete()
+        except Exception as e:
+            logger.warning(f"Не удалось удалить старое сообщение: {e}")
+
+        user = await user_repo.get_by_id(user_id)
+        timezone = user.timezone if user and user.timezone else "UTC"
+        logger.info(f"Часовой пояс пользователя {user_id}: {timezone}")
+
+        utc_now = datetime.utcnow()
+        offset_hours = 5 if timezone == "UTC+05:00" else 0
+        local_now = utc_now + timedelta(hours=offset_hours)
+        current_date = local_now.date()
+        logger.info(f"Текущая дата с учетом часового пояса {timezone}: {current_date}")
+
+        planned_checkins = await checkin_service.get_all_planned_checkins()
+
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔄 Обновить", callback_data="refresh_plan"
+                    )
+                ],
+                [
+                    InlineKeyboardButton(
+                        text="🏠 В главное меню", callback_data="main_menu"
+                    )
+                ],
+            ]
+        )
+
+        if not planned_checkins:
+            await callback.message.answer(
+                "📅 Пока нет запланированных тус, бро! Создай новую через /checkin! 🏄‍♂️",
+                reply_markup=kb,
+                parse_mode="HTML",
+            )
+        else:
+            checkins_by_spot = defaultdict(lambda: defaultdict(list))
+            for checkin in planned_checkins:
+                spot = await checkin_service.spot_service.get_spot_by_id(
+                    checkin.spot_id
+                )
+                spot_name = spot.name if spot else "Неизвестный спот"
+                date_str = (
+                    checkin.planned_date.strftime("%d.%m.%Y")
+                    if checkin.planned_date
+                    else "Не указана"
+                )
+                checkins_by_spot[spot_name][date_str].append(checkin)
+
+            message = "📅 Йо, запланированные тусы, бро! 🏄‍♂️\n\n"
+            for spot_name, dates in checkins_by_spot.items():
+                message += f"🏄‍♂️ <b>Спот: {spot_name}</b>\n"
+                for date_str, checkins in dates.items():
+                    message += f"📅 <b>{date_str}</b>:\n"
+                    for checkin in checkins:
+                        checkin_user = await user_repo.get_by_id(checkin.user_id)
+                        user_name = (
+                            checkin_user.name
+                            if checkin_user
+                            else "Неизвестный пользователь"
+                        )
+                        username = (
+                            f"@{checkin_user.username}"
+                            if checkin_user and checkin_user.username
+                            else ""
+                        )
+                        user_link = (
+                            f'<a href="tg://user?id={checkin.user_id}">{user_name}</a>'
+                        )
+                        message += (
+                            f"- {username} ({user_link})\n"
+                            if username
+                            else f"- {user_link}\n"
+                        )
+                    message += "\n"
+                message += "\n"
+            message += "🔄 Обновить список или вернись в меню! 👇"
+
+            await callback.message.answer(message, reply_markup=kb, parse_mode="HTML")
+        await callback.answer()
+
     @dp.callback_query(lambda c: c.data == "main_menu")
-    async def callback_main_menu(callback: CallbackQuery, state: FSMContext, checkin_repo: CheckinRepository):
+    async def callback_main_menu(
+        callback: CallbackQuery, state: FSMContext, checkin_repo: CheckinRepository
+    ):
         """Обработка нажатия кнопки 'В главное меню'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'main_menu' от пользователя {user_id}")
@@ -150,6 +274,7 @@ def register_main_menu_handlers(dp: Dispatcher):
         checkin_service: CheckinService,
         weather_service: WeatherService,
         chat_service: ChatService,
+        user_repo: UserRepository,  # Добавляем зависимость
     ):
         """Обработка геолокации для активности."""
         user_id = message.from_user.id
@@ -160,7 +285,19 @@ def register_main_menu_handlers(dp: Dispatcher):
         latitude = message.location.latitude
         longitude = message.location.longitude
         await geo_service.cache_location(user_id, latitude, longitude)
+
+        # Обновляем часовой пояс пользователя
+        timezone = await geo_service.get_timezone(latitude, longitude)
+        await user_repo.create(
+            user_id=user_id,
+            name=message.from_user.full_name,
+            username=message.from_user.username,
+            timezone=timezone,
+        )
+        logger.info(f"Часовой пояс {timezone} сохранен для пользователя {user_id}")
+
         from src.handlers.activity import show_activity
+
         await show_activity(
             message,
             latitude,
@@ -181,6 +318,7 @@ def register_main_menu_handlers(dp: Dispatcher):
         state: FSMContext,
         user_repo: UserRepository,
         geo_service: GeoService,
+        spot_service: SpotService,  # Добавляем зависимость
     ):
         """Обработка геолокации для ближайших спотов."""
         user_id = message.from_user.id
@@ -191,15 +329,17 @@ def register_main_menu_handlers(dp: Dispatcher):
         latitude = message.location.latitude
         longitude = message.location.longitude
         await geo_service.cache_location(user_id, latitude, longitude)
+
+        # Обновляем часовой пояс пользователя
         timezone = await geo_service.get_timezone(latitude, longitude)
-        if timezone:
-            await user_repo.create(
-                user_id=user_id,
-                name=message.from_user.full_name,
-                username=message.from_user.username,
-                timezone=timezone,
-            )
-            logger.info(f"Часовой пояс {timezone} сохранен для пользователя {user_id}")
+        await user_repo.create(
+            user_id=user_id,
+            name=message.from_user.full_name,
+            username=message.from_user.username,
+            timezone=timezone,
+        )
+        logger.info(f"Часовой пояс {timezone} сохранен для пользователя {user_id}")
+
         spots = await spot_service.get_all_spots()
         nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
         if not nearby_spots:

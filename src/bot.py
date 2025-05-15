@@ -32,6 +32,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 async def main():
     """Инициализация и запуск бота."""
     logger.info("Инициализация модуля bot.py")
@@ -127,11 +128,14 @@ async def main():
                 geo_service=geo_service,
                 spot_service=spot_service,
                 checkin_service=checkin_service,
+                user_repo=user_repo,
             )
             register_main_menu_handlers(dp)
 
             @dp.message(Command(commands=["create_topic"]))
-            async def cmd_create_topic(message: Message, topic_service: TopicService = None):
+            async def cmd_create_topic(
+                message: Message, topic_service: TopicService = None
+            ):
                 """Создание темы для спота."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /create_topic от пользователя {user_id}")
@@ -159,7 +163,9 @@ async def main():
                     await message.answer(f"Не удалось создать тему: {e}")
 
             @dp.message(Command(commands=["subscribe"]))
-            async def cmd_subscribe(message: Message, subscription_repo: SubscriptionRepository = None):
+            async def cmd_subscribe(
+                message: Message, subscription_repo: SubscriptionRepository = None
+            ):
                 """Подписка на события спота."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /subscribe от пользователя {user_id}")
@@ -191,7 +197,9 @@ async def main():
                     await message.answer(f"Не удалось создать подписку: {e}")
 
             @dp.message(Command(commands=["test_notification"]))
-            async def cmd_test_notification(message: Message, notification_service: NotificationService = None):
+            async def cmd_test_notification(
+                message: Message, notification_service: NotificationService = None
+            ):
                 """Тест отправки уведомления."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /test_notification от пользователя {user_id}")
@@ -270,6 +278,7 @@ async def main():
             await http_session.close()
         await weather_service.close()
         await bot.session.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

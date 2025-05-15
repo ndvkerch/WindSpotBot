@@ -2,9 +2,10 @@ import aiosqlite
 from typing import List, Optional
 from src.models.checkin import Checkin
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
+
 
 class CheckinRepository:
     """Репозиторий для работы с чек-инами."""
@@ -32,7 +33,9 @@ class CheckinRepository:
             ) as cursor:
                 await self.db.commit()
                 checkin_id = cursor.lastrowid
-                logger.info(f"Чек-ин #{checkin_id} создан для пользователя {checkin.user_id}")
+                logger.info(
+                    f"Чек-ин #{checkin_id} создан для пользователя {checkin.user_id}"
+                )
                 return checkin_id
         except Exception as e:
             logger.error(f"Ошибка при создании чек-ина: {e}")
@@ -80,15 +83,31 @@ class CheckinRepository:
             logger.error(f"Ошибка при получении чек-ина #{checkin_id}: {e}")
             return None
 
-    async def get_active_checkins(self) -> List[Checkin]:
-        """Получение всех активных чек-инов."""
+    async def get_active_checkins(
+        self, type_filter: int = None, exclude_date: date = None, max_date: date = None
+    ) -> List[Checkin]:
+        """Получение всех активных чек-инов с фильтрацией по типу и датам."""
         try:
             now = datetime.utcnow().isoformat()
-            async with self.db.execute(
+            query = (
                 "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
-                "FROM checkins WHERE active = 1 AND (active_until IS NULL OR active_until > ?)",
-                (now,),
-            ) as cursor:
+                "FROM checkins WHERE active = 1 AND (active_until IS NULL OR active_until > ?)"
+            )
+            params = [now]
+
+            if type_filter is not None:
+                query += " AND type = ?"
+                params.append(type_filter)
+
+            if exclude_date is not None:
+                query += " AND planned_date != ?"
+                params.append(exclude_date.isoformat())
+
+            if max_date is not None:
+                query += " AND planned_date <= ?"
+                params.append(max_date.isoformat())
+
+            async with self.db.execute(query, params) as cursor:
                 rows = await cursor.fetchall()
                 return [Checkin.from_row(row) for row in rows]
         except Exception as e:
@@ -141,7 +160,9 @@ class CheckinRepository:
             logger.error(f"Ошибка при удалении истекших чек-инов типа 3: {e}")
             return 0
 
-    async def deactivate_checkin(self, checkin_id: int, update_duration: bool = False) -> bool:
+    async def deactivate_checkin(
+        self, checkin_id: int, update_duration: bool = False
+    ) -> bool:
         """Деактивация чек-ина с возможностью обновления duration."""
         try:
             checkin = await self.get_by_id(checkin_id)
@@ -172,7 +193,9 @@ class CheckinRepository:
             logger.error(f"Ошибка при деактивации чек-ина #{checkin_id}: {e}")
             return False
 
-    async def update_active_until(self, checkin_id: int, active_until: datetime, duration: int) -> bool:
+    async def update_active_until(
+        self, checkin_id: int, active_until: datetime, duration: int
+    ) -> bool:
         """Обновление active_until и duration для чек-ина."""
         try:
             async with self.db.execute(
@@ -181,7 +204,9 @@ class CheckinRepository:
             ) as cursor:
                 await self.db.commit()
                 if cursor.rowcount > 0:
-                    logger.info(f"Чек-ин #{checkin_id} обновлен: active_until={active_until}, duration={duration}")
+                    logger.info(
+                        f"Чек-ин #{checkin_id} обновлен: active_until={active_until}, duration={duration}"
+                    )
                     return True
                 return False
         except Exception as e:

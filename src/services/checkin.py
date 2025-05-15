@@ -13,6 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class CheckinService:
     """Сервис для управления чек-инами."""
 
@@ -127,7 +128,9 @@ class CheckinService:
 
             # Уведомление о чек-ине только для типа 1
             if checkin_type == 1:
-                await self.notification_service.send_checkin_notification(user, spot.name)
+                await self.notification_service.send_checkin_notification(
+                    user, spot.name
+                )
             await self.notification_service.send_spot_checkin_notification(
                 user, spot.name, checkin_type, duration, planned_hours, planned_date
             )
@@ -163,7 +166,9 @@ class CheckinService:
             logger.error(f"Ошибка при создании чек-ина для пользователя {user.id}: {e}")
             return False
 
-    async def deactivate_checkin(self, checkin_id: int, update_duration: bool = False) -> bool:
+    async def deactivate_checkin(
+        self, checkin_id: int, update_duration: bool = False
+    ) -> bool:
         """Деактивация чек-ина."""
         try:
             checkin = await self.checkin_repo.get_by_id(checkin_id)
@@ -174,12 +179,18 @@ class CheckinService:
             spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
             spot_name = spot.name if spot else "Неизвестный спот"
 
-            success = await self.checkin_repo.deactivate_checkin(checkin_id, update_duration)
+            success = await self.checkin_repo.deactivate_checkin(
+                checkin_id, update_duration
+            )
             if success:
                 user = await self.user_repo.get_by_id(checkin.user_id)
                 if user:
-                    user_model = User(id=user.id, name=user.name, username=user.username)
-                    await self.notification_service.send_checkout_notification(user_model, spot_name)
+                    user_model = User(
+                        id=user.id, name=user.name, username=user.username
+                    )
+                    await self.notification_service.send_checkout_notification(
+                        user_model, spot_name
+                    )
                     await self.notification_service.send_spot_checkout_notification(
                         user_model, spot_name, checkin.type
                     )
@@ -236,6 +247,19 @@ class CheckinService:
             logger.error(f"Ошибка при отмене чек-ина #{checkin_id}: {e}")
             return False
 
+    async def get_all_planned_checkins(self) -> list[Checkin]:
+        """Получение всех активных запланированных чек-инов типа 3 на будущие даты."""
+        try:
+            current_date = date.today()
+            max_date = current_date + timedelta(days=7)  # Неделя вперед
+            checkins = await self.checkin_repo.get_active_checkins(
+                type_filter=3, exclude_date=current_date, max_date=max_date
+            )
+            return sorted(checkins, key=lambda x: x.planned_date)  # Сортировка по дате
+        except Exception as e:
+            logger.error(f"Ошибка при получении запланированных чек-инов: {e}")
+            return []
+
     async def send_planned_checkin_reminders(self, current_date: date):
         """Отправка напоминаний для чек-инов типа 3 на текущую дату."""
         try:
@@ -244,20 +268,28 @@ class CheckinService:
                 user = await self.user_repo.get_by_id(checkin.user_id)
                 spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
                 if user and spot:
-                    user_model = User(id=user.id, name=user.name, username=user.username)
+                    user_model = User(
+                        id=user.id, name=user.name, username=user.username
+                    )
                     await self.bot.send_message(
                         user_model.id,
                         f"📅 Йо, ты запланировал посетить '{spot.name}' сегодня! Подтверди намерения: 🏄‍♂️",
-                        reply_markup=MainKeyboards.get_planned_checkin_reminder_menu(checkin.id),
+                        reply_markup=MainKeyboards.get_planned_checkin_reminder_menu(
+                            checkin.id
+                        ),
                     )
                     logger.info(f"Напоминание отправлено для чек-ина #{checkin.id}")
         except Exception as e:
             logger.error(f"Ошибка при отправке напоминаний на {current_date}: {e}")
 
-    async def update_checkin_duration(self, checkin_id: int, active_until: datetime, duration: int) -> bool:
+    async def update_checkin_duration(
+        self, checkin_id: int, active_until: datetime, duration: int
+    ) -> bool:
         """Обновление времени действия и длительности чек-ина."""
         try:
-            success = await self.checkin_repo.update_active_until(checkin_id, active_until, duration)
+            success = await self.checkin_repo.update_active_until(
+                checkin_id, active_until, duration
+            )
             if success:
                 logger.info(
                     f"Чек-ин #{checkin_id} обновлен: active_until={active_until}, duration={duration}"
@@ -270,7 +302,9 @@ class CheckinService:
             logger.error(f"Ошибка при обновлении чек-ина #{checkin_id}: {e}")
             return False
 
-    async def confirm_arrival(self, checkin_id: int, user: User, duration: int = 3600) -> bool:
+    async def confirm_arrival(
+        self, checkin_id: int, user: User, duration: int = 3600
+    ) -> bool:
         """Подтверждение прибытия для чек-ина 2-го типа, преобразование в чек-ин 1-го типа."""
         try:
             checkin = await self.checkin_repo.get_by_id(checkin_id)
@@ -313,7 +347,9 @@ class CheckinService:
                 user, spot.name, checkin_type=1, duration=duration
             )
 
-            weather = await self.weather_service.get_weather(spot.latitude, spot.longitude)
+            weather = await self.weather_service.get_weather(
+                spot.latitude, spot.longitude
+            )
             wind_speed = weather.get("wind_speed", "N/A")
             await self.bot.send_message(
                 user.id,
@@ -329,7 +365,9 @@ class CheckinService:
             )
             return True
         except Exception as e:
-            logger.error(f"Ошибка при подтверждении прибытия для чек-ина #{checkin_id}: {e}")
+            logger.error(
+                f"Ошибка при подтверждении прибытия для чек-ина #{checkin_id}: {e}"
+            )
             await self.bot.send_message(
                 user.id, f"😕 Ошибка при подтверждении прибытия: {str(e)}"
             )

@@ -9,26 +9,31 @@ from src.services.spot import SpotService
 from src.services.checkin import CheckinService
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
+from src.repositories.user import UserRepository  # Добавляем импорт
 from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
 
+
 class CheckinStates(StatesGroup):
     """Состояния для процесса чек-ина."""
+
     requesting_location = State()
     selecting_spot = State()
     selecting_type = State()
     selecting_duration = State()
     selecting_planned_time = State()
     confirming_duration = State()
-    selecting_date = State()  # Состояние для выбора даты
-    confirming_planned_checkin = State()  # Состояние для подтверждения чек-ина типа 3
+    selecting_date = State()
+    confirming_planned_checkin = State()
+
 
 def register_checkin_handlers(
     dp: Dispatcher,
     geo_service: GeoService,
     spot_service: SpotService,
     checkin_service: CheckinService,
+    user_repo: UserRepository,  # Добавляем зависимость
 ):
     """Регистрация хендлеров для команды /checkin."""
 
@@ -60,7 +65,9 @@ def register_checkin_handlers(
             await state.set_state(CheckinStates.requesting_location)
 
     @dp.message(CheckinStates.requesting_location)
-    async def process_checkin_location(message: Message, state: FSMContext):
+    async def process_checkin_location(
+        message: Message, state: FSMContext, user_repo: UserRepository
+    ):
         """Обработка геолокации для чек-ина."""
         user_id = message.from_user.id
         logger.info(f"Обработка геолокации для чек-ина от пользователя {user_id}")
@@ -72,6 +79,17 @@ def register_checkin_handlers(
         longitude = message.location.longitude
         await geo_service.cache_location(user_id, latitude, longitude)
         logger.info(f"Получена геолокация: ({latitude}, {longitude})")
+
+        # Обновляем часовой пояс пользователя
+        timezone = await geo_service.get_timezone(latitude, longitude)
+        await user_repo.create(
+            user_id=user_id,
+            name=message.from_user.full_name,
+            username=message.from_user.username,
+            timezone=timezone,
+        )
+        logger.info(f"Часовой пояс {timezone} сохранен для пользователя {user_id}")
+
         spots = await spot_service.get_all_spots()
         nearby_spots = await geo_service.get_nearby_spots(spots, latitude, longitude)
         if not nearby_spots:
@@ -219,7 +237,7 @@ def register_checkin_handlers(
             )
             if success:
                 date_text = planned_date.strftime("%d.%m.%Y")
-                checkin = (await checkin_service.checkin_repo.get_by_user(user_id))[-1]  # Последний чек-ин
+                checkin = (await checkin_service.checkin_repo.get_by_user(user_id))[-1]
                 await callback.message.edit_text(
                     f"✅ Планы на '{spot_name}' {date_text} сохранены, бро! 🏄‍♂️",
                     reply_markup=MainKeyboards.get_cancel_planned_menu(checkin.id),
@@ -232,11 +250,14 @@ def register_checkin_handlers(
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_confirm_plan: {e}")
-            await callback.message.edit_text(f"😕 Ошибка при подтверждении плана: {str(e)}")
+            await callback.message.edit_text(
+                f"😕 Ошибка при подтверждении плана: {str(e)}"
+            )
             await state.clear()
 
     @dp.callback_query(
-        lambda c: c.data and c.data.startswith("duration:"), CheckinStates.selecting_duration
+        lambda c: c.data and c.data.startswith("duration:"),
+        CheckinStates.selecting_duration,
     )
     async def callback_duration(callback: CallbackQuery, state: FSMContext):
         """Обработка выбора длительности чек-ина."""
@@ -278,7 +299,8 @@ def register_checkin_handlers(
             await state.clear()
 
     @dp.callback_query(
-        lambda c: c.data and c.data.startswith("planned_time:"), CheckinStates.selecting_planned_time
+        lambda c: c.data and c.data.startswith("planned_time:"),
+        CheckinStates.selecting_planned_time,
     )
     async def callback_planned_time(callback: CallbackQuery, state: FSMContext):
         """Обработка выбора времени прибытия для чек-ина 2-го типа."""
@@ -329,7 +351,9 @@ def register_checkin_handlers(
             checkin_id = int(callback.data.split(":", 1)[1])
             checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
             if not checkin or not checkin.active:
-                await callback.message.edit_text("😕 Чек-ин не найден или не активен, бро!")
+                await callback.message.edit_text(
+                    "😕 Чек-ин не найден или не активен, бро!"
+                )
                 await state.clear()
                 return
             spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
@@ -340,7 +364,9 @@ def register_checkin_handlers(
             now = datetime.utcnow()
             is_expired = checkin.active_until and checkin.active_until < now
             update_duration = not is_expired
-            await checkin_service.checkin_repo.deactivate_checkin(checkin_id, update_duration=update_duration)
+            await checkin_service.checkin_repo.deactivate_checkin(
+                checkin_id, update_duration=update_duration
+            )
             user = User(
                 id=user_id,
                 name=callback.from_user.full_name,
@@ -352,7 +378,9 @@ def register_checkin_handlers(
             await checkin_service.notification_service.send_spot_checkout_notification(
                 user, spot.name, checkin.type
             )
-            kb = await MainKeyboards.get_main_menu(user_id, checkin_service.checkin_repo)
+            kb = await MainKeyboards.get_main_menu(
+                user_id, checkin_service.checkin_repo
+            )
             await callback.message.edit_text(
                 f"🚪 Йо, ты покинул '{spot.name}'! 💨 Лови главное меню! 🏄‍♂️",
                 reply_markup=kb,
@@ -371,12 +399,16 @@ def register_checkin_handlers(
     async def callback_extend_checkin(callback: CallbackQuery, state: FSMContext):
         """Обработка кнопки 'Продлить чек-ин'."""
         user_id = callback.from_user.id
-        logger.info(f"Нажата кнопка 'Продлить чек-ин': {callback.data} от пользователя {user_id}")
+        logger.info(
+            f"Нажата кнопка 'Продлить чек-ин': {callback.data} от пользователя {user_id}"
+        )
         try:
             checkin_id = int(callback.data.split(":", 1)[1])
             checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
             if not checkin or not checkin.active:
-                await callback.message.edit_text("😕 Чек-ин не найден или не активен, бро!")
+                await callback.message.edit_text(
+                    "😕 Чек-ин не найден или не активен, бро!"
+                )
                 await state.clear()
                 return
             spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
@@ -401,14 +433,18 @@ def register_checkin_handlers(
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_extend_checkin: {e}")
-            await callback.message.edit_text(f"😕 Ошибка при продлении чек-ина: {str(e)}")
+            await callback.message.edit_text(
+                f"😕 Ошибка при продлении чек-ина: {str(e)}"
+            )
             await state.clear()
 
     @dp.callback_query(lambda c: c.data and c.data.startswith("confirm_arrival:"))
     async def callback_confirm_arrival(callback: CallbackQuery, state: FSMContext):
         """Обработка кнопки 'Я на месте' для чек-ина 2-го типа."""
         user_id = callback.from_user.id
-        logger.info(f"Нажата кнопка 'Я на месте': {callback.data} от пользователя {user_id}")
+        logger.info(
+            f"Нажата кнопка 'Я на месте': {callback.data} от пользователя {user_id}"
+        )
         try:
             checkin_id = int(callback.data.split(":", 1)[1])
             checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
@@ -439,12 +475,15 @@ def register_checkin_handlers(
             await state.clear()
 
     @dp.callback_query(
-        lambda c: c.data and c.data.startswith("duration:"), CheckinStates.confirming_duration
+        lambda c: c.data and c.data.startswith("duration:"),
+        CheckinStates.confirming_duration,
     )
     async def callback_confirm_duration(callback: CallbackQuery, state: FSMContext):
         """Обработка выбора длительности при подтверждении прибытия."""
         user_id = callback.from_user.id
-        logger.info(f"Выбор длительности при подтверждении: {callback.data} пользователем {user_id}")
+        logger.info(
+            f"Выбор длительности при подтверждении: {callback.data} пользователем {user_id}"
+        )
         try:
             data = await state.get_data()
             checkin_id = data.get("checkin_id")
@@ -460,7 +499,9 @@ def register_checkin_handlers(
                 name=callback.from_user.full_name,
                 username=callback.from_user.username,
             )
-            success = await checkin_service.confirm_arrival(checkin_id, user, duration=duration_seconds)
+            success = await checkin_service.confirm_arrival(
+                checkin_id, user, duration=duration_seconds
+            )
             if success:
                 await callback.message.edit_text(
                     f"✅ Йо, ты на '{spot_name}'! Лови волну на {duration_hours} ч! 🏄‍♂️"
@@ -482,13 +523,17 @@ def register_checkin_handlers(
     async def callback_planned_action(callback: CallbackQuery, state: FSMContext):
         """Обработка действий из напоминания для чек-ина типа 3."""
         user_id = callback.from_user.id
-        logger.info(f"Обработка действия напоминания: {callback.data} пользователем {user_id}")
+        logger.info(
+            f"Обработка действия напоминания: {callback.data} пользователем {user_id}"
+        )
         try:
             action, checkin_id = callback.data.split(":", 1)[1].split("_")
             checkin_id = int(checkin_id)
             checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
             if not checkin or checkin.type != 3 or not checkin.active:
-                await callback.message.edit_text("😕 План не найден или не активен, бро!")
+                await callback.message.edit_text(
+                    "😕 План не найден или не активен, бро!"
+                )
                 await state.clear()
                 return
             spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
@@ -507,7 +552,9 @@ def register_checkin_handlers(
                     f"✅ Йо, ты на '{spot.name}'! Лови вайб! 🏄‍♂️\nСколько тусить будешь?",
                     reply_markup=kb,
                 )
-                await state.update_data(checkin_type=1, spot_id=spot.id, spot_name=spot.name)
+                await state.update_data(
+                    checkin_type=1, spot_id=spot.id, spot_name=spot.name
+                )
                 await state.set_state(CheckinStates.selecting_duration)
             elif action == "type2":
                 kb = MainKeyboards.get_planned_time_options()
@@ -515,7 +562,9 @@ def register_checkin_handlers(
                     f"📅 Йо, когда планируешь быть на '{spot.name}'? 🏄‍♂️",
                     reply_markup=kb,
                 )
-                await state.update_data(checkin_type=2, spot_id=spot.id, spot_name=spot.name)
+                await state.update_data(
+                    checkin_type=2, spot_id=spot.id, spot_name=spot.name
+                )
                 await state.set_state(CheckinStates.selecting_planned_time)
             elif action == "cancel":
                 success = await checkin_service.cancel_planned_checkin(checkin_id, user)
@@ -531,7 +580,9 @@ def register_checkin_handlers(
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_planned_action: {e}")
-            await callback.message.edit_text(f"😕 Ошибка при обработке действия: {str(e)}")
+            await callback.message.edit_text(
+                f"😕 Ошибка при обработке действия: {str(e)}"
+            )
             await state.clear()
 
     @dp.callback_query(lambda c: c.data == "back_to_location")
@@ -571,7 +622,7 @@ def register_checkin_handlers(
             await state.set_state(CheckinStates.selecting_spot)
         else:
             await callback.message.edit_text(
-                "😕 Ге habitableикация не найдена. Отправь заново, бро!"
+                "😕 Геолокация не найдена. Отправь заново, бро!"
             )
             await geo_service.request_location(callback.message, state, user_id)
             await state.set_state(CheckinStates.requesting_location)
@@ -617,7 +668,9 @@ def register_checkin_handlers(
     async def callback_cancel_checkin(callback: CallbackQuery, state: FSMContext):
         """Обработка кнопки 'Отменить чек-ин'."""
         user_id = callback.from_user.id
-        logger.info(f"Нажата кнопка 'Отменить чек-ин': {callback.data} от пользователя {user_id}")
+        logger.info(
+            f"Нажата кнопка 'Отменить чек-ин': {callback.data} от пользователя {user_id}"
+        )
         try:
             checkin_id = int(callback.data.split(":", 1)[1])
             user = User(
@@ -627,7 +680,9 @@ def register_checkin_handlers(
             )
             checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
             if not checkin or not checkin.active:
-                await callback.message.edit_text("😕 Чек-ин не найден или не активен, бро!")
+                await callback.message.edit_text(
+                    "😕 Чек-ин не найден или не активен, бро!"
+                )
                 await state.clear()
                 return
             spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
@@ -638,16 +693,15 @@ def register_checkin_handlers(
 
             success = False
             if checkin.type == 1:
-                # Деактивируем чек-ин типа 1
                 now = datetime.utcnow()
                 is_expired = checkin.active_until and checkin.active_until < now
                 update_duration = not is_expired
-                success = await checkin_service.deactivate_checkin(checkin_id, update_duration=update_duration)
+                success = await checkin_service.deactivate_checkin(
+                    checkin_id, update_duration=update_duration
+                )
             elif checkin.type == 2:
-                # Удаляем чек-ин типа 2
                 success = await checkin_service.delete_checkin(checkin_id, user)
             elif checkin.type == 3:
-                # Отменяем плановый чек-ин типа 3
                 success = await checkin_service.cancel_planned_checkin(checkin_id, user)
 
             if success:
@@ -662,9 +716,7 @@ def register_checkin_handlers(
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_cancel_checkin: {e}")
-            await callback.message.edit_text(
-                f"😕 Ошибка при отмене чек-ина: {str(e)}"
-            )
+            await callback.message.edit_text(f"😕 Ошибка при отмене чек-ина: {str(e)}")
             await state.clear()
 
     @dp.callback_query(lambda c: c.data == "main_menu")
