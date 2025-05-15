@@ -82,7 +82,7 @@ class CheckinService:
                             user, previous_spot_name
                         )
                         await self.notification_service.send_spot_checkout_notification(
-                            user, previous_spot_name
+                            user, previous_spot_name, checkin.type
                         )
                     break
 
@@ -110,7 +110,9 @@ class CheckinService:
                 return False
 
             await self.notification_service.send_checkin_notification(user, spot.name)
-            await self.notification_service.send_spot_checkin_notification(user, spot.name)
+            await self.notification_service.send_spot_checkin_notification(
+                user, spot.name, checkin_type, duration, planned_hours
+            )
 
             if checkin_type == 2:
                 await self.bot.send_message(
@@ -144,8 +146,20 @@ class CheckinService:
     async def deactivate_checkin(self, checkin_id: int, update_duration: bool = False) -> bool:
         """Деактивация чек-ина."""
         try:
+            checkin = await self.checkin_repo.get_by_id(checkin_id)
+            if not checkin:
+                logger.warning(f"Чек-ин #{checkin_id} не найден")
+                return False
+
+            spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
+            spot_name = spot.name if spot else "Неизвестный спот"
+
             success = await self.checkin_repo.deactivate_checkin(checkin_id, update_duration)
             if success:
+                await self.notification_service.send_checkout_notification(user, spot_name)
+                await self.notification_service.send_spot_checkout_notification(
+                    user, spot_name, checkin.type
+                )
                 logger.info(f"Чек-ин #{checkin_id} деактивирован")
                 return True
             else:
@@ -175,7 +189,9 @@ class CheckinService:
                     return False
 
             await self.notification_service.send_checkout_notification(user, spot_name)
-            await self.notification_service.send_spot_checkout_notification(user, spot_name)
+            await self.notification_service.send_spot_checkout_notification(
+                user, spot_name, checkin.type
+            )
 
             logger.info(f"Чек-ин #{checkin_id} удален для пользователя {user.id}")
             return True
@@ -238,7 +254,9 @@ class CheckinService:
                     return False
 
             await self.notification_service.send_checkin_notification(user, spot.name)
-            await self.notification_service.send_spot_checkin_notification(user, spot.name)
+            await self.notification_service.send_spot_checkin_notification(
+                user, spot.name, checkin_type=1, duration=duration
+            )
 
             weather = await self.weather_service.get_weather(spot.latitude, spot.longitude)
             wind_speed = weather.get("wind_speed", "N/A")

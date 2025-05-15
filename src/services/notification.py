@@ -7,7 +7,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class NotificationService:
     """Сервис для отправки уведомлений."""
 
@@ -146,7 +145,14 @@ class NotificationService:
                 f"Ошибка при обработке подписчиков для погоды '{spot_name}': {e}"
             )
 
-    async def send_spot_checkin_notification(self, user: User, spot_name: str):
+    async def send_spot_checkin_notification(
+        self,
+        user: User,
+        spot_name: str,
+        checkin_type: int,
+        duration: int = None,
+        planned_hours: int = None,
+    ):
         """Отправка уведомления о чек-ине в тему спота."""
         try:
             thread_id = await self.topic_service.get_topic_id(spot_name)
@@ -154,13 +160,32 @@ class NotificationService:
                 f"Отправка уведомления в тему '{spot_name}', thread_id={thread_id}, chat_id={settings.CHAT_ID}"
             )
             if thread_id:
+                if checkin_type == 1:
+                    hours = duration // 3600 if duration else 1
+                    hours_text = f"{hours} час" if hours == 1 else f"{hours} часа" if hours < 5 else f"{hours} часов"
+                    text = (
+                        f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
+                        f"отметился на #{spot_name} и планирует быть {hours_text}. 🏄‍♂️"
+                    )
+                elif checkin_type == 2:
+                    hours = planned_hours if planned_hours else 1
+                    hours_text = f"{hours} час" if hours == 1 else f"{hours} часа" if hours < 5 else f"{hours} часов"
+                    text = (
+                        f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
+                        f"планирует приехать на #{spot_name} в течение {hours_text}. 🛵"
+                    )
+                elif checkin_type == 3:
+                    text = (
+                        f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
+                        f"планирует посетить #{spot_name} позже. 📅"
+                    )
+                else:
+                    logger.warning(f"Неизвестный тип чек-ина: {checkin_type}")
+                    return
                 await self.bot.send_message(
                     chat_id=settings.CHAT_ID,
                     message_thread_id=thread_id,
-                    text=(
-                        f"🪁 <a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"зачекинился на #{spot_name}: Ветер огонь! 🤙"
-                    ),
+                    text=text,
                     parse_mode="HTML",
                 )
                 logger.info(f"Уведомление о чек-ине отправлено в тему #{spot_name}")
@@ -169,7 +194,12 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Ошибка при отправке уведомления в тему '{spot_name}': {e}")
 
-    async def send_spot_checkout_notification(self, user: User, spot_name: str):
+    async def send_spot_checkout_notification(
+        self,
+        user: User,
+        spot_name: str,
+        checkin_type: int,
+    ):
         """Отправка уведомления о расчек-ине в тему спота."""
         try:
             thread_id = await self.topic_service.get_topic_id(spot_name)
@@ -177,19 +207,27 @@ class NotificationService:
                 f"Отправка уведомления о расчек-ине в тему '{spot_name}', thread_id={thread_id}, chat_id={settings.CHAT_ID}"
             )
             if thread_id:
+                if checkin_type == 1 or checkin_type == 3:
+                    text = (
+                        f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
+                        f"покинул #{spot_name}. 💨"
+                    )
+                elif checkin_type == 2:
+                    text = (
+                        f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
+                        f"поменял планы и не приедет на #{spot_name}. 😔"
+                    )
+                else:
+                    logger.warning(f"Неизвестный тип чек-ина: {checkin_type}")
+                    return
                 await self.bot.send_message(
                     chat_id=settings.CHAT_ID,
                     message_thread_id=thread_id,
-                    text=(
-                        f"🚪 <a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"покинул #{spot_name}. 💨"
-                    ),
+                    text=text,
                     parse_mode="HTML",
                 )
                 logger.info(f"Уведомление о расчек-ине отправлено в тему #{spot_name}")
             else:
                 logger.warning(f"Тема для спота '{spot_name}' не найдена")
         except Exception as e:
-            logger.error(
-                f"Ошибка при отправке уведомления о расчек-ине в тему '{spot_name}': {e}"
-            )
+            logger.error(f"Ошибка при отправке уведомления о расчек-ине в тему '{spot_name}': {e}")
