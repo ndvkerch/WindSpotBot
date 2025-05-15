@@ -4,6 +4,7 @@ from src.services.topic import TopicService
 from src.repositories.subscription import SubscriptionRepository
 from src.config.config import settings
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ class NotificationService:
                         chat_id=user_id,
                         text=(
                             f"🪁 Новое сообщение в чате '{spot_name}' от "
-                            f"<a href='tg://user?id={sender.id}'>@{sender.username or sender.name}</a>: "
+                            f"<a href='tg://user?id={sender.id}'>@{sender.username or user.name}</a>: "
                             f"{message_text[:100]}... 🤙"
                         ),
                         parse_mode="HTML",
@@ -160,24 +161,29 @@ class NotificationService:
                 f"Отправка уведомления в тему '{spot_name}', thread_id={thread_id}, chat_id={settings.CHAT_ID}"
             )
             if thread_id:
+                # Очищаем tag_name: оставляем только буквы, цифры, подчеркивание; пробелы → '_'
+                tag_name = re.sub(r'[^a-zA-Zа-яА-Я0-9_]', '', spot_name.replace(" ", "_"))
+                if not tag_name:
+                    logger.warning(f"После очистки tag_name для '{spot_name}' пустой, тег не добавлен")
+                    tag_name = "Spot"  # Запасной вариант, если tag_name пустой
                 if checkin_type == 1:
                     hours = duration // 3600 if duration else 1
                     hours_text = f"{hours} час" if hours == 1 else f"{hours} часа" if hours < 5 else f"{hours} часов"
                     text = (
                         f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"отметился на #{spot_name} и планирует быть {hours_text}. 🏄‍♂️"
+                        f"отметился на #{tag_name} и планирует быть {hours_text}. 🏄‍♂️"
                     )
                 elif checkin_type == 2:
                     hours = planned_hours if planned_hours else 1
                     hours_text = f"{hours} час" if hours == 1 else f"{hours} часа" if hours < 5 else f"{hours} часов"
                     text = (
                         f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"планирует приехать на #{spot_name} в течение {hours_text}. 🛵"
+                        f"планирует приехать на #{tag_name} в течение {hours_text}. 🛵"
                     )
                 elif checkin_type == 3:
                     text = (
                         f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"планирует посетить #{spot_name} позже. 📅"
+                        f"планирует посетить #{tag_name} позже. 📅"
                     )
                 else:
                     logger.warning(f"Неизвестный тип чек-ина: {checkin_type}")
@@ -207,15 +213,20 @@ class NotificationService:
                 f"Отправка уведомления о расчек-ине в тему '{spot_name}', thread_id={thread_id}, chat_id={settings.CHAT_ID}"
             )
             if thread_id:
+                # Очищаем tag_name: оставляем только буквы, цифры, подчеркивание; пробелы → '_'
+                tag_name = re.sub(r'[^a-zA-Zа-яА-Я0-9_]', '', spot_name.replace(" ", "_"))
+                if not tag_name:
+                    logger.warning(f"После очистки tag_name для '{spot_name}' пустой, тег не добавлен")
+                    tag_name = "Spot"  # Запасной вариант, если tag_name пустой
                 if checkin_type == 1 or checkin_type == 3:
                     text = (
                         f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"покинул #{spot_name}. 💨"
+                        f"покинул #{tag_name}. 💨"
                     )
                 elif checkin_type == 2:
                     text = (
                         f"<a href='tg://user?id={user.id}'>@{user.username or user.name}</a> "
-                        f"поменял планы и не приедет на #{spot_name}. 😔"
+                        f"поменял планы и не приедет на #{tag_name}. 😔"
                     )
                 else:
                     logger.warning(f"Неизвестный тип чек-ина: {checkin_type}")
