@@ -8,7 +8,7 @@ from src.services.notification import NotificationService
 from src.services.weather import WeatherService
 from src.services.spot import SpotService
 from src.keyboards.main import MainKeyboards
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,13 @@ class CheckinService:
             return []
 
     async def create_checkin(
-        self, user: User, spot_id: int, checkin_type: int, duration: int = 3600, planned_hours: int = None
+        self,
+        user: User,
+        spot_id: int,
+        checkin_type: int,
+        duration: int = 3600,
+        planned_hours: int = None,
+        planned_date: date = None,
     ) -> bool:
         """Создание нового чек-ина."""
         try:
@@ -62,6 +68,7 @@ class CheckinService:
                     checkin.active_until
                     and now < checkin.active_until
                     and checkin.active
+                    and checkin.type in (1, 2)  # Тип 3 не конфликтует
                 ):
                     previous_checkin = checkin
                     previous_spot = await self.spot_service.get_spot_by_id(
@@ -74,7 +81,7 @@ class CheckinService:
                         # Удаляем активный чек-ин 2-го типа
                         await self.delete_checkin(checkin.id, user)
                     else:
-                        # Деактивируем чек-ин 1-го или 3-го типа
+                        # Деактивируем чек-ин 1-го типа
                         await self.checkin_repo.deactivate_checkin(
                             checkin.id, update_duration=True
                         )
@@ -87,11 +94,19 @@ class CheckinService:
                     break
 
             created_at = now
-            active_until = now + timedelta(seconds=duration)
+            active_until = None
             planned_at = None
-            if checkin_type == 2 and planned_hours:
+            if checkin_type == 1:
+                duration = duration or 3600
+                active_until = now + timedelta(seconds=duration)
+            elif checkin_type == 2 and planned_hours:
+                duration = duration or 3600
                 planned_at = now + timedelta(hours=planned_hours)
                 active_until = planned_at + timedelta(seconds=duration)
+            elif checkin_type == 3 and planned_date:
+                # active_until = конец дня planned_date (23:59:59)
+                active_until = datetime.combine(planned_date, datetime.max.time())
+                duration = 0  # Для типа 3 duration не используется, устанавливаем 0
 
             checkin = Checkin(
                 id=0,
@@ -102,6 +117,7 @@ class CheckinService:
                 created_at=created_at,
                 active_until=active_until,
                 planned_at=planned_at,
+                planned_date=planned_date,
                 active=True,
             )
             checkin_id = await self.checkin_repo.create(checkin)
@@ -109,9 +125,11 @@ class CheckinService:
                 logger.error(f"Не удалось создать чек-ин для пользователя {user.id}")
                 return False
 
-            await self.notification_service.send_checkin_notification(user, spot.name)
+            # Уведомление о чек-ине только для типа 1
+            if checkin_type == 1:
+                await self.notification_service.send_checkin_notification(user, spot.name)
             await self.notification_service.send_spot_checkin_notification(
-                user, spot.name, checkin_type, duration, planned_hours
+                user, spot.name, checkin_type, duration, planned_hours, planned_date
             )
 
             if checkin_type == 2:
@@ -121,6 +139,8 @@ class CheckinService:
                     f"Не забудь отметить, когда будешь на месте! 🏄‍♂️",
                     reply_markup=MainKeyboards.get_confirm_arrival_menu(checkin_id),
                 )
+            elif checkin_type == 3:
+                pass  # Убрано дублирующее сообщение, оно отправляется в handler
             else:
                 weather = await self.weather_service.get_weather(
                     spot.latitude, spot.longitude
@@ -156,10 +176,13 @@ class CheckinService:
 
             success = await self.checkin_repo.deactivate_checkin(checkin_id, update_duration)
             if success:
-                await self.notification_service.send_checkout_notification(user, spot_name)
-                await self.notification_service.send_spot_checkout_notification(
-                    user, spot_name, checkin.type
-                )
+                user = await self.user_repo.get_by_id(checkin.user_id)
+                if user:
+                    user_model = User(id=user.id, name=user.name, username=user.username)
+                    await self.notification_service.send_checkout_notification(user_model, spot_name)
+                    await self.notification_service.send_spot_checkout_notification(
+                        user_model, spot_name, checkin.type
+                    )
                 logger.info(f"Чек-ин #{checkin_id} деактивирован")
                 return True
             else:
@@ -198,6 +221,38 @@ class CheckinService:
         except Exception as e:
             logger.error(f"Ошибка при удалении чек-ина #{checkin_id}: {e}")
             return False
+
+    async def cancel_planned_checkin(self, checkin_id: int, user: User) -> bool:
+        """Отмена чек-ина типа 3."""
+        try:
+            checkin = await self.checkin_repo.get_by_id(checkin_id)
+            if not checkin or checkin.type != 3:
+                logger.warning(f"Чек-ин #{checkin_id} не найден или не типа 3")
+                return False
+
+            success = await self.delete_checkin(checkin_id, user)
+            return success
+        except Exception as e:
+            logger.error(f"Ошибка при отмене чек-ина #{checkin_id}: {e}")
+            return False
+
+    async def send_planned_checkin_reminders(self, current_date: date):
+        """Отправка напоминаний для чек-инов типа 3 на текущую дату."""
+        try:
+            checkins = await self.checkin_repo.get_todays_planned_checkins(current_date)
+            for checkin in checkins:
+                user = await self.user_repo.get_by_id(checkin.user_id)
+                spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
+                if user and spot:
+                    user_model = User(id=user.id, name=user.name, username=user.username)
+                    await self.bot.send_message(
+                        user_model.id,
+                        f"📅 Йо, ты запланировал посетить '{spot.name}' сегодня! Подтверди намерения: 🏄‍♂️",
+                        reply_markup=MainKeyboards.get_planned_checkin_reminder_menu(checkin.id),
+                    )
+                    logger.info(f"Напоминание отправлено для чек-ина #{checkin.id}")
+        except Exception as e:
+            logger.error(f"Ошибка при отправке напоминаний на {current_date}: {e}")
 
     async def update_checkin_duration(self, checkin_id: int, active_until: datetime, duration: int) -> bool:
         """Обновление времени действия и длительности чек-ина."""

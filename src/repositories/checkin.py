@@ -2,7 +2,7 @@ import aiosqlite
 from typing import List, Optional
 from src.models.checkin import Checkin
 import logging
-from datetime import datetime
+from datetime import datetime, date
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +16,8 @@ class CheckinRepository:
         """Создание чек-ина."""
         try:
             async with self.db.execute(
-                "INSERT INTO checkins (user_id, spot_id, type, duration, created_at, active_until, planned_at, active) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO checkins (user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     checkin.user_id,
                     checkin.spot_id,
@@ -27,6 +27,7 @@ class CheckinRepository:
                     checkin.active_until.isoformat() if checkin.active_until else None,
                     checkin.planned_at.isoformat() if checkin.planned_at else None,
                     int(checkin.active),
+                    checkin.planned_date.isoformat() if checkin.planned_date else None,
                 ),
             ) as cursor:
                 await self.db.commit()
@@ -41,7 +42,7 @@ class CheckinRepository:
         """Получение активных чек-инов пользователя."""
         try:
             async with self.db.execute(
-                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active "
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
                 "FROM checkins WHERE user_id = ? AND active = 1",
                 (user_id,),
             ) as cursor:
@@ -55,7 +56,7 @@ class CheckinRepository:
         """Получение всех чек-инов для спота."""
         try:
             async with self.db.execute(
-                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active "
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
                 "FROM checkins WHERE spot_id = ?",
                 (spot_id,),
             ) as cursor:
@@ -69,7 +70,7 @@ class CheckinRepository:
         """Получение чек-ина по ID."""
         try:
             async with self.db.execute(
-                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active "
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
                 "FROM checkins WHERE id = ?",
                 (checkin_id,),
             ) as cursor:
@@ -84,7 +85,7 @@ class CheckinRepository:
         try:
             now = datetime.utcnow().isoformat()
             async with self.db.execute(
-                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active "
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
                 "FROM checkins WHERE active = 1 AND (active_until IS NULL OR active_until > ?)",
                 (now,),
             ) as cursor:
@@ -99,7 +100,7 @@ class CheckinRepository:
         try:
             now = datetime.utcnow().isoformat()
             async with self.db.execute(
-                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active "
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
                 "FROM checkins WHERE active = 1 AND active_until IS NOT NULL AND active_until < ?",
                 (now,),
             ) as cursor:
@@ -108,6 +109,37 @@ class CheckinRepository:
         except Exception as e:
             logger.error(f"Ошибка при получении истекших чек-инов: {e}")
             return []
+
+    async def get_todays_planned_checkins(self, current_date: date) -> List[Checkin]:
+        """Получение чек-инов типа 3 для текущей даты."""
+        try:
+            async with self.db.execute(
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
+                "FROM checkins WHERE type = 3 AND active = 1 AND planned_date = ?",
+                (current_date.isoformat(),),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [Checkin.from_row(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка при получении чек-инов типа 3 на {current_date}: {e}")
+            return []
+
+    async def delete_expired_type_3_checkins(self) -> int:
+        """Удаление истекших чек-инов типа 3."""
+        try:
+            now = datetime.utcnow().isoformat()
+            async with self.db.execute(
+                "DELETE FROM checkins WHERE type = 3 AND active_until IS NOT NULL AND active_until < ?",
+                (now,),
+            ) as cursor:
+                await self.db.commit()
+                deleted_count = cursor.rowcount
+                if deleted_count > 0:
+                    logger.info(f"Удалено {deleted_count} чек-инов типа 3")
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Ошибка при удалении истекших чек-инов типа 3: {e}")
+            return 0
 
     async def deactivate_checkin(self, checkin_id: int, update_duration: bool = False) -> bool:
         """Деактивация чек-ина с возможностью обновления duration."""

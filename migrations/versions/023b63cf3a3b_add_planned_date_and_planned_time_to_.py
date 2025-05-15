@@ -1,4 +1,4 @@
-"""Add planned_date and planned_time to checkins
+"""Add planned_date to checkins
 
 Revision ID: 023b63cf3a3b
 Revises: 0d3549bcd01a
@@ -19,11 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade():
-    # Добавляем столбцы planned_date и planned_time в таблицу checkins
+    # Добавляем столбец planned_date в таблицу checkins
     op.add_column('checkins', sa.Column('planned_date', sa.Date(), nullable=True))
-    op.add_column('checkins', sa.Column('planned_time', sa.String(length=20), nullable=True))
 
 def downgrade():
-    # Удаляем столбцы planned_date и planned_time
-    op.drop_column('checkins', 'planned_time')
+    # Удаляем столбец planned_date
     op.drop_column('checkins', 'planned_date')

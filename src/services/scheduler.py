@@ -1,7 +1,9 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from src.services.checkin import CheckinService
+from src.models.user import User
+from src.keyboards.main import MainKeyboards
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 logger = logging.getLogger(__name__)
 
@@ -137,3 +139,42 @@ class SchedulerService:
             replace_existing=True
         )
         logger.info(f"Задача удаления неподтвержденных чек-инов добавлена с интервалом {interval_minutes} минут")
+
+    def add_planned_checkin_reminder_job(self):
+        """Добавление задачи напоминаний о чек-инах типа 3 в 8:00 утра."""
+        async def send_planned_checkin_reminders():
+            try:
+                current_date = date.today()
+                await self.checkin_service.send_planned_checkin_reminders(current_date)
+                logger.info(f"Напоминания о чек-инах типа 3 отправлены на {current_date}")
+            except Exception as e:
+                logger.error(f"Ошибка при отправке напоминаний о чек-инах типа 3: {e}")
+
+        self.scheduler.add_job(
+            send_planned_checkin_reminders,
+            'cron',
+            hour=8,
+            minute=0,
+            id='planned_checkin_reminders',
+            replace_existing=True
+        )
+        logger.info("Задача напоминаний о чек-инах типа 3 добавлена на 8:00 утра ежедневно")
+
+    def add_delete_expired_type_3_checkins_job(self):
+        """Добавление задачи удаления истекших чек-инов типа 3 в 00:00."""
+        async def delete_expired_type_3_checkins():
+            try:
+                deleted_count = await self.checkin_service.checkin_repo.delete_expired_type_3_checkins()
+                logger.info(f"Задача удаления истекших чек-инов типа 3 выполнена, удалено: {deleted_count}")
+            except Exception as e:
+                logger.error(f"Ошибка при удалении истекших чек-инов типа 3: {e}")
+
+        self.scheduler.add_job(
+            delete_expired_type_3_checkins,
+            'cron',
+            hour=0,
+            minute=0,
+            id='delete_expired_type_3_checkins',
+            replace_existing=True
+        )
+        logger.info("Задача удаления истекших чек-инов типа 3 добавлена на 00:00 ежедневно")

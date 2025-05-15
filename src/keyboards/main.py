@@ -4,6 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from src.models.spot import Spot, SpotWithDistance
 from src.repositories.checkin import CheckinRepository
 from typing import List
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,6 @@ class MainKeyboards:
         for button in buttons:
             builder.add(button)
 
-        # Проверка активных чек-инов пользователя
         active_checkins = await checkin_repo.get_by_user(user_id)
         for checkin in active_checkins:
             if checkin.active:
@@ -45,7 +45,14 @@ class MainKeyboards:
                             callback_data=f"cancel_checkin:{checkin.id}",
                         )
                     )
-                else:
+                elif checkin.type == 3:
+                    builder.add(
+                        InlineKeyboardButton(
+                            text="❌ Отменить планы",
+                            callback_data=f"cancel_checkin:{checkin.id}",
+                        )
+                    )
+                else:  # Тип 1
                     builder.add(
                         InlineKeyboardButton(
                             text="🚪 Покинуть спот",
@@ -53,7 +60,7 @@ class MainKeyboards:
                         )
                     )
 
-        builder.adjust(2)  # 2 кнопки в ряду
+        builder.adjust(2)
         return builder.as_markup()
 
     @staticmethod
@@ -97,7 +104,7 @@ class MainKeyboards:
         durations = [(1, "1 час"), (2, "2 часа"), (3, "3 часа"), (4, "4 часа"), (5, "5 часов"), (6, "6 часов")]
         for hours, text in durations:
             builder.add(InlineKeyboardButton(text=text, callback_data=f"duration:{hours}"))
-        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_type"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(2)
         return builder.as_markup()
@@ -110,7 +117,7 @@ class MainKeyboards:
         times = [(1, "Через 1 час"), (2, "Через 2 часа"), (3, "Через 3 часа")]
         for hours, text in times:
             builder.add(InlineKeyboardButton(text=text, callback_data=f"planned_time:{hours}"))
-        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_type"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(3, 2)
         return builder.as_markup()
@@ -238,4 +245,104 @@ class MainKeyboards:
         builder.add(InlineKeyboardButton(text="📍 Обновить геопозицию", callback_data="refresh_location"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(1)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_date_options() -> InlineKeyboardMarkup:
+        """Клавиатура для выбора даты поездки для чек-ина типа 3."""
+        logger.info("Создание клавиатуры выбора даты")
+        builder = InlineKeyboardBuilder()
+        today = date.today()
+        for i in range(1, 8):  # Следующие 7 дней
+            day = today + timedelta(days=i)
+            builder.add(
+                InlineKeyboardButton(
+                    text=day.strftime("%d.%m.%Y"),
+                    callback_data=f"date:{day.isoformat()}",
+                )
+            )
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_type"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(2)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_time_options() -> InlineKeyboardMarkup:
+        """Клавиатура для выбора времени поездки для чек-ина типа 3."""
+        logger.info("Создание клавиатуры выбора времени")
+        builder = InlineKeyboardBuilder()
+        times = [
+            ("Утром", "morning"),
+            ("Днем", "afternoon"),
+            ("Вечером", "evening"),
+            ("Не указывать", "none"),
+        ]
+        for text, value in times:
+            builder.add(
+                InlineKeyboardButton(
+                    text=text,
+                    callback_data=f"time:{value}",
+                )
+            )
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_date"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(2)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_confirm_planned_checkin() -> InlineKeyboardMarkup:
+        """Клавиатура для подтверждения чек-ина типа 3."""
+        logger.info("Создание клавиатуры подтверждения плана")
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="✅ Подтвердить",
+                callback_data="confirm_plan",
+            )
+        )
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_time"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(1)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_cancel_planned_menu(checkin_id: int) -> InlineKeyboardMarkup:
+        """Клавиатура для отмены чек-ина типа 3."""
+        logger.info(f"Создание клавиатуры отмены плана для чек-ина #{checkin_id}")
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="❌ Отменить планы",
+                callback_data=f"cancel_checkin:{checkin_id}",
+            )
+        )
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(1)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_planned_checkin_reminder_menu(checkin_id: int) -> InlineKeyboardMarkup:
+        """Клавиатура для напоминаний о чек-ине типа 3."""
+        logger.info(f"Создание клавиатуры напоминания для чек-ина #{checkin_id}")
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="✅ Чек-ин на месте",
+                callback_data=f"planned_action:type1_{checkin_id}",
+            )
+        )
+        builder.add(
+            InlineKeyboardButton(
+                text="⏳ Планирую приехать",
+                callback_data=f"planned_action:type2_{checkin_id}",
+            )
+        )
+        builder.add(
+            InlineKeyboardButton(
+                text="❌ Отменить планы",
+                callback_data=f"planned_action:cancel_{checkin_id}",
+            )
+        )
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(2)
         return builder.as_markup()
