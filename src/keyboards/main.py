@@ -12,7 +12,7 @@ class MainKeyboards:
 
     @staticmethod
     async def get_main_menu(user_id: int, checkin_repo: CheckinRepository) -> InlineKeyboardMarkup:
-        """Получение главного меню с динамической кнопкой 'Покинуть спот' для активных чек-инов."""
+        """Получение главного меню с динамическими кнопками для активных чек-инов."""
         logger.info(f"Создание главного меню для пользователя {user_id}")
         builder = InlineKeyboardBuilder()
         buttons = [
@@ -30,17 +30,29 @@ class MainKeyboards:
 
         # Проверка активных чек-инов пользователя
         active_checkins = await checkin_repo.get_by_user(user_id)
-        if active_checkins:
-            leave_buttons = [
-                InlineKeyboardButton(
-                    text="🚪 Покинуть спот",
-                    callback_data=f"leave_spot:{active_checkins[0].id}"
-                )
-            ]
-            for button in leave_buttons:
-                builder.add(button)
+        for checkin in active_checkins:
+            if checkin.active:
+                if checkin.type == 2:
+                    builder.add(
+                        InlineKeyboardButton(
+                            text="✅ Я на месте",
+                            callback_data=f"confirm_arrival:{checkin.id}",
+                        )
+                    )
+                    builder.add(
+                        InlineKeyboardButton(
+                            text="❌ Не приеду",
+                            callback_data=f"cancel_checkin:{checkin.id}",
+                        )
+                    )
+                else:
+                    builder.add(
+                        InlineKeyboardButton(
+                            text="🚪 Покинуть спот",
+                            callback_data=f"leave_spot:{checkin.id}",
+                        )
+                    )
 
-        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(2)  # 2 кнопки в ряду
         return builder.as_markup()
 
@@ -48,171 +60,182 @@ class MainKeyboards:
     def get_post_checkin_menu(checkin_id: int) -> InlineKeyboardMarkup:
         """Клавиатура после чек-ина."""
         logger.info(f"Создание клавиатуры после чек-ина #{checkin_id}")
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🚪 Покинуть спот",
-                        callback_data=f"leave_spot:{checkin_id}",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="🏠 В главное меню", callback_data="main_menu"
-                    )
-                ],
-            ]
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="🚪 Покинуть спот",
+                callback_data=f"leave_spot:{checkin_id}",
+            )
         )
-        return kb
+        builder.add(
+            InlineKeyboardButton(
+                text="🏠 В главное меню",
+                callback_data="main_menu",
+            )
+        )
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_checkin_types() -> InlineKeyboardMarkup:
         """Клавиатура для типов чек-инов."""
         logger.info("Создание клавиатуры типов чек-инов")
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="✅ На месте", callback_data="checkin:1")],
-                [InlineKeyboardButton(text="⏳ Прибуду", callback_data="checkin:2")],
-                [InlineKeyboardButton(text="📅 Планирую", callback_data="checkin:3")],
-                [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots")],
-                [
-                    InlineKeyboardButton(
-                        text="🏠 В главное меню", callback_data="main_menu"
-                    )
-                ],
-            ]
-        )
-        return kb
+        builder = InlineKeyboardBuilder()
+        builder.add(InlineKeyboardButton(text="✅ На месте", callback_data="checkin:1"))
+        builder.add(InlineKeyboardButton(text="⏳ Прибуду", callback_data="checkin:2"))
+        builder.add(InlineKeyboardButton(text="📅 Планирую", callback_data="checkin:3"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_duration_options() -> InlineKeyboardMarkup:
         """Клавиатура для выбора длительности чек-ина."""
         logger.info("Создание клавиатуры длительности чек-ина")
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(text="1 час", callback_data="duration:1"),
-                    InlineKeyboardButton(text="2 часа", callback_data="duration:2"),
-                ],
-                [
-                    InlineKeyboardButton(text="3 часа", callback_data="duration:3"),
-                    InlineKeyboardButton(text="4 часа", callback_data="duration:4"),
-                ],
-                [
-                    InlineKeyboardButton(text="5 часов", callback_data="duration:5"),
-                    InlineKeyboardButton(text="6 часов", callback_data="duration:6"),
-                ],
-                [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots")],
-                [
-                    InlineKeyboardButton(
-                        text="🏠 В главное меню", callback_data="main_menu"
-                    )
-                ],
-            ]
+        builder = InlineKeyboardBuilder()
+        durations = [(1, "1 час"), (2, "2 часа"), (3, "3 часа"), (4, "4 часа"), (5, "5 часов"), (6, "6 часов")]
+        for hours, text in durations:
+            builder.add(InlineKeyboardButton(text=text, callback_data=f"duration:{hours}"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(2)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_planned_time_options() -> InlineKeyboardMarkup:
+        """Клавиатура для выбора времени прибытия для чек-ина 2-го типа."""
+        logger.info("Создание клавиатуры времени прибытия")
+        builder = InlineKeyboardBuilder()
+        times = [(1, "Через 1 час"), (2, "Через 2 часа"), (3, "Через 3 часа")]
+        for hours, text in times:
+            builder.add(InlineKeyboardButton(text=text, callback_data=f"planned_time:{hours}"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_spots"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(3, 2)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_confirm_arrival_menu(checkin_id: int) -> InlineKeyboardMarkup:
+        """Клавиатура для подтверждения прибытия на спот."""
+        logger.info(f"Создание клавиатуры подтверждения прибытия для чек-ина #{checkin_id}")
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="✅ Я на месте",
+                callback_data=f"confirm_arrival:{checkin_id}",
+            )
         )
-        return kb
+        builder.add(
+            InlineKeyboardButton(
+                text="❌ Не приеду",
+                callback_data=f"cancel_checkin:{checkin_id}",
+            )
+        )
+        builder.add(
+            InlineKeyboardButton(
+                text="🏠 В главное меню",
+                callback_data="main_menu",
+            )
+        )
+        builder.adjust(2, 1)
+        return builder.as_markup()
+
+    @staticmethod
+    def get_extend_checkin_menu(checkin_id: int) -> InlineKeyboardMarkup:
+        """Клавиатура для продления чек-ина."""
+        logger.info(f"Создание клавиатуры продления для чек-ина #{checkin_id}")
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="⏳ Продлить на 1 час",
+                callback_data=f"extend_checkin:{checkin_id}",
+            )
+        )
+        builder.add(
+            InlineKeyboardButton(
+                text="🏠 В главное меню",
+                callback_data="main_menu",
+            )
+        )
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_spot_chat_button() -> InlineKeyboardMarkup:
         """Кнопка для перехода в @WindSpotChat."""
         logger.info("Создание кнопки для чата @WindSpotChat")
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="Чат спотов", url="t.me/WindSpotChat")]
-            ]
-        )
-        return kb
+        builder = InlineKeyboardBuilder()
+        builder.add(InlineKeyboardButton(text="Чат спотов", url="t.me/WindSpotChat"))
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_subscription_options(spot_name: str) -> InlineKeyboardMarkup:
         """Клавиатура для управления подписками на спот."""
         logger.info(f"Создание клавиатуры подписок для спота '{spot_name}'")
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="Подписаться на чек-ины",
-                        callback_data=f"subscribe:{spot_name}:checkin",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="Подписаться на сообщения",
-                        callback_data=f"subscribe:{spot_name}:message",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="Подписаться на погоду",
-                        callback_data=f"subscribe:{spot_name}:weather",
-                    )
-                ],
-            ]
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="Подписаться на чек-ины",
+                callback_data=f"subscribe:{spot_name}:checkin",
+            )
         )
-        return kb
+        builder.add(
+            InlineKeyboardButton(
+                text="Подписаться на сообщения",
+                callback_data=f"subscribe:{spot_name}:message",
+            )
+        )
+        builder.add(
+            InlineKeyboardButton(
+                text="Подписаться на погоду",
+                callback_data=f"subscribe:{spot_name}:weather",
+            )
+        )
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_spots_list(spots: List[SpotWithDistance]) -> InlineKeyboardMarkup:
         """Получение списка спотов."""
         logger.info(f"Создание клавиатуры для {len(spots)} спотов")
-        inline_keyboard = []
+        builder = InlineKeyboardBuilder()
         for spot_with_distance in spots:
             spot = spot_with_distance.spot
             distance = f"{spot_with_distance.distance:.1f} км"
-            inline_keyboard.append(
-                [
-                    InlineKeyboardButton(
-                        text=f"{spot.name} ({distance})",
-                        callback_data=f"spot:{spot.id}",
-                    )
-                ]
+            builder.add(
+                InlineKeyboardButton(
+                    text=f"{spot.name} ({distance})",
+                    callback_data=f"spot:{spot.id}",
+                )
             )
-        inline_keyboard.append(
-            [InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_location")]
-        )
-        inline_keyboard.append(
-            [InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu")]
-        )
-        kb = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
-        logger.info(f"Клавиатура спотов создана: {len(inline_keyboard)} кнопок")
-        return kb
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_location"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_refresh_button(spot_id: int) -> InlineKeyboardMarkup:
         """Создание кнопки 'Обновить' для спота."""
         logger.info(f"Создание кнопки 'Обновить' для спота ID {spot_id}")
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🔄 Обновить", callback_data=f"refresh_spot:{spot_id}"
-                    )
-                ]
-            ]
+        builder = InlineKeyboardBuilder()
+        builder.add(
+            InlineKeyboardButton(
+                text="🔄 Обновить",
+                callback_data=f"refresh_spot:{spot_id}",
+            )
         )
-        return keyboard
+        builder.adjust(1)
+        return builder.as_markup()
 
     @staticmethod
     def get_activity_controls() -> InlineKeyboardMarkup:
         """Создание клавиатуры для управления активностью."""
         logger.info("Создание клавиатуры для управления активностью")
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="🔄 Обновить всё", callback_data="refresh_all"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="📍 Обновить геопозицию", callback_data="refresh_location"
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        text="🏠 В главное меню", callback_data="main_menu"
-                    )
-                ],
-            ]
-        )
-        return keyboard
+        builder = InlineKeyboardBuilder()
+        builder.add(InlineKeyboardButton(text="🔄 Обновить всё", callback_data="refresh_all"))
+        builder.add(InlineKeyboardButton(text="📍 Обновить геопозицию", callback_data="refresh_location"))
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
+        builder.adjust(1)
+        return builder.as_markup()

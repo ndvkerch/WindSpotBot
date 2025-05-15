@@ -256,6 +256,9 @@ async def main():
             # Запуск планировщика
             scheduler_service.start()
             scheduler_service.add_checkin_expiration_job(interval_minutes=5)
+            scheduler_service.add_checkin_warning_job(interval_minutes=2)
+            scheduler_service.add_pending_checkin_notification_job(interval_minutes=2)
+            scheduler_service.add_delete_expired_type_2_checkins_job(interval_minutes=5)
 
             logger.info("Бот запущен")
             await dp.start_polling(bot)
