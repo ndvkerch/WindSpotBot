@@ -11,41 +11,27 @@ from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
 from src.repositories.user import UserRepository
 from src.handlers.checkin import CheckinStates
+from src.repositories.checkin import CheckinRepository
 
 logger = logging.getLogger(__name__)
 
-
 class SpotsStates(StatesGroup):
     """Состояния для просмотра спотов."""
-
     requesting_location = State()
-
 
 class AddSpotStates(StatesGroup):
     """Состояния для добавления спота."""
-
     entering_name = State()
-
 
 class ActivityStates(StatesGroup):
     """Состояния для активности."""
-
     requesting_location = State()
 
-
-def register_main_menu_handlers(
-    dp: Dispatcher,
-    geo_service: GeoService,
-    spot_service: SpotService,
-    checkin_service: CheckinService,
-    weather_service: WeatherService,
-    chat_service: ChatService,
-    user_repo: UserRepository,
-):
+def register_main_menu_handlers(dp: Dispatcher):
     """Регистрация обработчиков для callback-запросов главного меню."""
 
     @dp.callback_query(lambda c: c.data == "checkin")
-    async def callback_checkin(callback: CallbackQuery, state: FSMContext):
+    async def callback_checkin(callback: CallbackQuery, state: FSMContext, geo_service: GeoService, spot_service: SpotService):
         """Обработка нажатия кнопки 'Чек-ин'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'checkin' от пользователя {user_id}")
@@ -74,7 +60,15 @@ def register_main_menu_handlers(
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "activity")
-    async def callback_activity(callback: CallbackQuery, state: FSMContext):
+    async def callback_activity(
+        callback: CallbackQuery,
+        state: FSMContext,
+        geo_service: GeoService,
+        spot_service: SpotService,
+        checkin_service: CheckinService,
+        weather_service: WeatherService,
+        chat_service: ChatService,
+    ):
         """Обработка нажатия кнопки 'Активность'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'activity' от пользователя {user_id}")
@@ -84,7 +78,6 @@ def register_main_menu_handlers(
             latitude, longitude = cached_location
             logger.info(f"Использован кэш: ({latitude}, {longitude})")
             from src.handlers.activity import show_activity
-
             await show_activity(
                 callback.message,
                 latitude,
@@ -103,7 +96,7 @@ def register_main_menu_handlers(
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "spots")
-    async def callback_spots(callback: CallbackQuery, state: FSMContext):
+    async def callback_spots(callback: CallbackQuery, state: FSMContext, geo_service: GeoService, spot_service: SpotService):
         """Обработка нажатия кнопки 'Ближайшие споты'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'spots' от пользователя {user_id}")
@@ -139,17 +132,25 @@ def register_main_menu_handlers(
         await callback.answer()
 
     @dp.callback_query(lambda c: c.data == "main_menu")
-    async def callback_main_menu(callback: CallbackQuery, state: FSMContext):
+    async def callback_main_menu(callback: CallbackQuery, state: FSMContext, checkin_repo: CheckinRepository):
         """Обработка нажатия кнопки 'В главное меню'."""
         user_id = callback.from_user.id
         logger.info(f"Callback 'main_menu' от пользователя {user_id}")
         await state.clear()
-        kb = MainKeyboards.get_main_menu()
+        kb = await MainKeyboards.get_main_menu(user_id, checkin_repo)
         await callback.message.answer("Главное меню:", reply_markup=kb)
         await callback.answer()
 
     @dp.message(ActivityStates.requesting_location)
-    async def process_activity_location(message: Message, state: FSMContext):
+    async def process_activity_location(
+        message: Message,
+        state: FSMContext,
+        geo_service: GeoService,
+        spot_service: SpotService,
+        checkin_service: CheckinService,
+        weather_service: WeatherService,
+        chat_service: ChatService,
+    ):
         """Обработка геолокации для активности."""
         user_id = message.from_user.id
         logger.info(f"Получена геолокация для активности от пользователя {user_id}")
@@ -160,7 +161,6 @@ def register_main_menu_handlers(
         longitude = message.location.longitude
         await geo_service.cache_location(user_id, latitude, longitude)
         from src.handlers.activity import show_activity
-
         await show_activity(
             message,
             latitude,
@@ -206,5 +206,5 @@ def register_main_menu_handlers(
             await message.answer("Споты не найдены. Добавьте споты через /add_spot.")
         else:
             kb = MainKeyboards.get_spots_list(nearby_spots)
-            await callback.message.answer("Ближайшие споты:", reply_markup=kb)
+            await message.answer("Ближайшие споты:", reply_markup=kb)
         await state.clear()

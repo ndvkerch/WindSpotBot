@@ -7,22 +7,19 @@ from aiogram.fsm.state import State, StatesGroup
 from src.keyboards.main import MainKeyboards
 from src.models.user import User
 from src.repositories.user import UserRepository
+from src.repositories.checkin import CheckinRepository
 from src.services.geo import GeoService
 
 logger = logging.getLogger(__name__)
 
-
 class StartStates(StatesGroup):
     requesting_location = State()
 
-
-def register_start_handlers(
-    dp: Dispatcher, user_repo: UserRepository, geo_service: GeoService
-):
+def register_start_handlers(dp: Dispatcher):
     """Регистрация обработчиков для команды /start."""
 
     @dp.message(Command(commands=["start"]))
-    async def cmd_start(message: Message, state: FSMContext):
+    async def cmd_start(message: Message, state: FSMContext, user_repo: UserRepository, checkin_repo: CheckinRepository):
         """Обработка команды /start."""
         user_id = message.from_user.id
         logger.info(f"Команда /start от пользователя {user_id}")
@@ -42,7 +39,7 @@ def register_start_handlers(
         )
 
         # Показ главного меню
-        kb = MainKeyboards.get_main_menu()
+        kb = await MainKeyboards.get_main_menu(user_id, checkin_repo)
         await message.answer("Выберите действие:", reply_markup=kb)
         await state.clear()
 
@@ -52,6 +49,7 @@ def register_start_handlers(
         state: FSMContext,
         user_repo: UserRepository,
         geo_service: GeoService,
+        checkin_repo: CheckinRepository,
     ):
         """Обработка геолокации для команды /start."""
         user_id = message.from_user.id
@@ -76,7 +74,7 @@ def register_start_handlers(
         )
 
         # Показ главного меню
-        kb = MainKeyboards.get_main_menu()
+        kb = await MainKeyboards.get_main_menu(user_id, checkin_repo)
         await message.answer(
             "Часовой пояс сохранён! Выберите действие:", reply_markup=kb
         )

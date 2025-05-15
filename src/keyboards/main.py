@@ -2,18 +2,18 @@ import logging
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from src.models.spot import Spot, SpotWithDistance
+from src.repositories.checkin import CheckinRepository
 from typing import List
 
 logger = logging.getLogger(__name__)
-
 
 class MainKeyboards:
     """Клавиатуры бота."""
 
     @staticmethod
-    def get_main_menu() -> InlineKeyboardMarkup:
-        """Получение главного меню."""
-        logger.info("Создание главного меню")
+    async def get_main_menu(user_id: int, checkin_repo: CheckinRepository) -> InlineKeyboardMarkup:
+        """Получение главного меню с динамической кнопкой 'Покинуть спот' для активных чек-инов."""
+        logger.info(f"Создание главного меню для пользователя {user_id}")
         builder = InlineKeyboardBuilder()
         buttons = [
             InlineKeyboardButton(text="🏄‍♂️ Чек-ин", callback_data="checkin"),
@@ -27,6 +27,20 @@ class MainKeyboards:
         ]
         for button in buttons:
             builder.add(button)
+
+        # Проверка активных чек-инов пользователя
+        active_checkins = await checkin_repo.get_by_user(user_id)
+        if active_checkins:
+            leave_buttons = [
+                InlineKeyboardButton(
+                    text="🚪 Покинуть спот",
+                    callback_data=f"leave_spot:{active_checkins[0].id}"
+                )
+            ]
+            for button in leave_buttons:
+                builder.add(button)
+
+        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(2)  # 2 кнопки в ряду
         return builder.as_markup()
 

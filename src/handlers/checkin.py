@@ -9,18 +9,16 @@ from src.services.spot import SpotService
 from src.services.checkin import CheckinService
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-
 class CheckinStates(StatesGroup):
     """Состояния для процесса чек-ина."""
-
     requesting_location = State()
     selecting_spot = State()
     selecting_type = State()
     selecting_duration = State()
-
 
 def register_checkin_handlers(
     dp: Dispatcher,
@@ -196,10 +194,9 @@ def register_checkin_handlers(
         )
         try:
             checkin_id = int(callback.data.split(":", 1)[1])
-            checkins = await checkin_service.checkin_repo.get_by_user(user_id)
-            checkin = next((c for c in checkins if c.id == checkin_id), None)
-            if not checkin:
-                await callback.message.edit_text("😕 Чек-ин не найден, бро!")
+            checkin = await checkin_service.checkin_repo.get_by_id(checkin_id)
+            if not checkin or not checkin.active:
+                await callback.message.edit_text("😕 Чек-ин не найден или не активен, бро!")
                 await state.clear()
                 return
             spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
@@ -207,7 +204,11 @@ def register_checkin_handlers(
                 await callback.message.edit_text("😕 Спот не найден, бро!")
                 await state.clear()
                 return
-            await checkin_service.checkin_repo.deactivate_checkin(checkin_id)
+            # Проверяем, просрочен ли чек-ин
+            now = datetime.utcnow()
+            is_expired = checkin.active_until and checkin.active_until < now
+            update_duration = not is_expired
+            await checkin_service.checkin_repo.deactivate_checkin(checkin_id, update_duration=update_duration)
             user = User(
                 id=user_id,
                 name=callback.from_user.full_name,
@@ -219,7 +220,7 @@ def register_checkin_handlers(
             await checkin_service.notification_service.send_spot_checkout_notification(
                 user, spot.name
             )
-            kb = MainKeyboards.get_main_menu()
+            kb = await MainKeyboards.get_main_menu(user_id, checkin_service.checkin_repo)
             await callback.message.edit_text(
                 f"🚪 Йо, ты покинул '{spot.name}'! 💨 Лови главное меню! 🏄‍♂️",
                 reply_markup=kb,
@@ -283,7 +284,7 @@ def register_checkin_handlers(
         user_id = callback.from_user.id
         logger.info(f"Нажата кнопка 'В главное меню' от пользователя {user_id}")
         await state.clear()
-        kb = MainKeyboards.get_main_menu()
+        kb = await MainKeyboards.get_main_menu(user_id, checkin_service.checkin_repo)
         await callback.message.edit_text(
             "🤙 Йо, бро! Лови главное меню WindSpotBot! 🏄‍♂️\n"
             "Найди спот, чек-инься или туси в @WindSpotRU! 💨",

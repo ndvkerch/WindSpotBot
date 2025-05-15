@@ -22,7 +22,8 @@ from src.handlers.start import register_start_handlers
 from src.handlers.activity import register_activity_handlers
 from src.handlers.checkin import register_checkin_handlers
 from src.handlers.main_menu import register_main_menu_handlers
-from src.models.user import User
+from src.services.scheduler import SchedulerService
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiosqlite
 import aiohttp
 
@@ -31,13 +32,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 async def main():
     """Инициализация и запуск бота."""
     logger.info("Инициализация модуля bot.py")
     bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
     dp = Dispatcher()
     http_session = None
+    scheduler = AsyncIOScheduler()
 
     try:
         await bot.set_my_commands(
@@ -83,6 +84,20 @@ async def main():
                 user_repo,
                 weather_service,
             )
+            scheduler_service = SchedulerService(scheduler, checkin_service)
+
+            # Добавление middleware для инъекции зависимостей
+            async def inject_dependencies_middleware(handler, event, data):
+                data["checkin_repo"] = checkin_repo
+                data["user_repo"] = user_repo
+                data["geo_service"] = geo_service
+                data["spot_service"] = spot_service
+                data["checkin_service"] = checkin_service
+                data["weather_service"] = weather_service
+                data["chat_service"] = chat_service
+                return await handler(event, data)
+
+            dp.update.middleware(inject_dependencies_middleware)
 
             @dp.error()
             async def error_handler(event, **kwargs):
@@ -98,28 +113,25 @@ async def main():
                     )
                 return True
 
-            register_start_handlers(dp, user_repo=user_repo, geo_service=geo_service)
+            register_start_handlers(dp)
             register_activity_handlers(
                 dp,
-                geo_service,
-                spot_service,
-                checkin_service,
-                weather_service,
-                chat_service,
+                geo_service=geo_service,
+                spot_service=spot_service,
+                checkin_service=checkin_service,
+                weather_service=weather_service,
+                chat_service=chat_service,
             )
-            register_checkin_handlers(dp, geo_service, spot_service, checkin_service)
-            register_main_menu_handlers(
+            register_checkin_handlers(
                 dp,
-                geo_service,
-                spot_service,
-                checkin_service,
-                weather_service,
-                chat_service,
-                user_repo=user_repo,
+                geo_service=geo_service,
+                spot_service=spot_service,
+                checkin_service=checkin_service,
             )
+            register_main_menu_handlers(dp)
 
             @dp.message(Command(commands=["create_topic"]))
-            async def cmd_create_topic(message: Message):
+            async def cmd_create_topic(message: Message, topic_service: TopicService = None):
                 """Создание темы для спота."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /create_topic от пользователя {user_id}")
@@ -147,7 +159,7 @@ async def main():
                     await message.answer(f"Не удалось создать тему: {e}")
 
             @dp.message(Command(commands=["subscribe"]))
-            async def cmd_subscribe(message: Message):
+            async def cmd_subscribe(message: Message, subscription_repo: SubscriptionRepository = None):
                 """Подписка на события спота."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /subscribe от пользователя {user_id}")
@@ -179,7 +191,7 @@ async def main():
                     await message.answer(f"Не удалось создать подписку: {e}")
 
             @dp.message(Command(commands=["test_notification"]))
-            async def cmd_test_notification(message: Message):
+            async def cmd_test_notification(message: Message, notification_service: NotificationService = None):
                 """Тест отправки уведомления."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /test_notification от пользователя {user_id}")
@@ -216,7 +228,7 @@ async def main():
                     await message.answer(f"Не удалось отправить уведомление: {e}")
 
             @dp.message(Command(commands=["test_chat"]))
-            async def cmd_test_chat(message: Message):
+            async def cmd_test_chat(message: Message, chat_service: ChatService = None):
                 """Тест отправки сообщения в тему."""
                 user_id = message.from_user.id
                 logger.info(f"Команда /test_chat от пользователя {user_id}")
@@ -241,6 +253,10 @@ async def main():
                     logger.error(f"Ошибка в cmd_test_chat: {e}")
                     await message.answer(f"Не удалось отправить сообщение: {e}")
 
+            # Запуск планировщика
+            scheduler_service.start()
+            scheduler_service.add_checkin_expiration_job(interval_minutes=5)
+
             logger.info("Бот запущен")
             await dp.start_polling(bot)
 
@@ -249,7 +265,6 @@ async def main():
             await http_session.close()
         await weather_service.close()
         await bot.session.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
