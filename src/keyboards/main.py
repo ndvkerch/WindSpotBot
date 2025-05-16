@@ -241,10 +241,10 @@ class MainKeyboards:
         """Создание клавиатуры для управления активностью."""
         logger.info("Создание клавиатуры для управления активностью")
         builder = InlineKeyboardBuilder()
-        builder.add(InlineKeyboardButton(text="🔄 Обновить всё", callback_data="refresh_all"))
-        builder.add(InlineKeyboardButton(text="📍 Обновить геопозицию", callback_data="refresh_location"))
+        builder.add(InlineKeyboardButton(text="📍 Уточнить геопозицию", callback_data="refresh_location"))
+        builder.add(InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_all"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
-        builder.adjust(1)
+        builder.adjust(1, 2)
         return builder.as_markup()
 
     @staticmethod
@@ -262,29 +262,6 @@ class MainKeyboards:
                 )
             )
         builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_type"))
-        builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
-        builder.adjust(2)
-        return builder.as_markup()
-
-    @staticmethod
-    def get_time_options() -> InlineKeyboardMarkup:
-        """Клавиатура для выбора времени поездки для чек-ина типа 3."""
-        logger.info("Создание клавиатуры выбора времени")
-        builder = InlineKeyboardBuilder()
-        times = [
-            ("Утром", "morning"),
-            ("Днем", "afternoon"),
-            ("Вечером", "evening"),
-            ("Не указывать", "none"),
-        ]
-        for text, value in times:
-            builder.add(
-                InlineKeyboardButton(
-                    text=text,
-                    callback_data=f"time:{value}",
-                )
-            )
-        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_date"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(2)
         return builder.as_markup()

@@ -10,9 +10,10 @@ from src.services.spot import SpotService
 from src.keyboards.main import MainKeyboards
 from datetime import datetime, timedelta, date
 import logging
+from typing import List, Tuple
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
-
 
 class CheckinService:
     """Сервис для управления чек-инами."""
@@ -40,6 +41,48 @@ class CheckinService:
         except Exception as e:
             logger.error(f"Ошибка при получении активных чек-инов: {e}")
             return []
+
+    async def get_active_users(self, spot_id: int) -> Tuple[List[Tuple[User, Checkin]], List[Tuple[User, Checkin]]]:
+        """Получение активных и планирующих пользователей на споте с их чек-инами."""
+        try:
+            now = datetime.utcnow()
+            today = date.today()
+            checkins = await self.checkin_repo.get_by_spot(spot_id)
+            on_spot = []
+            planning = []
+
+            for checkin in checkins:
+                user_data = await self.user_repo.get_by_id(checkin.user_id)
+                if not user_data:
+                    continue
+                user = User(
+                    id=checkin.user_id,
+                    name=user_data.name,
+                    username=user_data.username,
+                    timezone=user_data.timezone,
+                )
+
+                # Пользователи на месте (тип 1)
+                if (
+                    checkin.type == 1
+                    and checkin.active_until
+                    and now < checkin.active_until
+                    and checkin.active
+                ):
+                    on_spot.append((user, checkin))
+                # Планирующие (только тип 2)
+                elif checkin.type == 2 and checkin.active and checkin.planned_at and now < checkin.planned_at:
+                    planning.append((user, checkin))
+
+            logger.info(
+                f"Найдено {len(on_spot)} активных и {len(planning)} планирующих для спота id {spot_id}"
+            )
+            return on_spot, planning
+        except Exception as e:
+            logger.error(
+                f"Ошибка при получении пользователей для спота id {spot_id}: {e}"
+            )
+            return [], []
 
     async def create_checkin(
         self,
@@ -271,9 +314,15 @@ class CheckinService:
                     user_model = User(
                         id=user.id, name=user.name, username=user.username
                     )
+                    # Получаем часовой пояс пользователя
+                    user_tz = user.timezone if user.timezone else "UTC"
+                    tz = ZoneInfo(user_tz)
+                    local_date = current_date
+                    local_datetime = datetime.combine(local_date, datetime.min.time(), tzinfo=tz)
+                    date_str = local_datetime.strftime("%d.%m.%Y")
                     await self.bot.send_message(
                         user_model.id,
-                        f"📅 Йо, ты запланировал посетить '{spot.name}' сегодня! Подтверди намерения: 🏄‍♂️",
+                        f"📅 Йо, ты запланировал посетить '{spot.name}' на {date_str}! Подтверди намерения: 🏄‍♂️",
                         reply_markup=MainKeyboards.get_planned_checkin_reminder_menu(
                             checkin.id
                         ),

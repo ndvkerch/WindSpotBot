@@ -23,24 +23,20 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-
 class SpotsStates(StatesGroup):
     """Состояния для просмотра спотов."""
 
     requesting_location = State()
-
 
 class AddSpotStates(StatesGroup):
     """Состояния для добавления спота."""
 
     entering_name = State()
 
-
 class ActivityStates(StatesGroup):
     """Состояния для активности."""
 
     requesting_location = State()
-
 
 def register_main_menu_handlers(dp: Dispatcher):
     """Регистрация обработчиков для callback-запросов главного меню."""
@@ -88,6 +84,7 @@ def register_main_menu_handlers(dp: Dispatcher):
         checkin_service: CheckinService,
         weather_service: WeatherService,
         chat_service: ChatService,
+        user_repo: UserRepository,  # Добавляем user_repo в параметры
     ):
         """Обработка нажатия кнопки 'Активность'."""
         user_id = callback.from_user.id
@@ -110,6 +107,7 @@ def register_main_menu_handlers(dp: Dispatcher):
                 user_id,
                 state,
                 geo_service,
+                user_repo,
             )
         else:
             await geo_service.request_location(callback.message, state, user_id)
@@ -274,7 +272,7 @@ def register_main_menu_handlers(dp: Dispatcher):
         checkin_service: CheckinService,
         weather_service: WeatherService,
         chat_service: ChatService,
-        user_repo: UserRepository,  # Добавляем зависимость
+        user_repo: UserRepository,
     ):
         """Обработка геолокации для активности."""
         user_id = message.from_user.id
@@ -309,6 +307,7 @@ def register_main_menu_handlers(dp: Dispatcher):
             user_id,
             state,
             geo_service,
+            user_repo,
         )
         await state.clear()
 
@@ -318,7 +317,7 @@ def register_main_menu_handlers(dp: Dispatcher):
         state: FSMContext,
         user_repo: UserRepository,
         geo_service: GeoService,
-        spot_service: SpotService,  # Добавляем зависимость
+        spot_service: SpotService,
     ):
         """Обработка геолокации для ближайших спотов."""
         user_id = message.from_user.id

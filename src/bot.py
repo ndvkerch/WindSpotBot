@@ -122,6 +122,7 @@ async def main():
                 checkin_service=checkin_service,
                 weather_service=weather_service,
                 chat_service=chat_service,
+                user_repo=user_repo,
             )
             register_checkin_handlers(
                 dp,

@@ -10,15 +10,16 @@ from src.services.checkin import CheckinService
 from src.services.weather import WeatherService
 from src.services.chat import ChatService
 from src.keyboards.main import MainKeyboards
+from src.repositories.user import UserRepository
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
-
 
 class ActivityStates(StatesGroup):
     """Состояния для просмотра активности."""
 
     requesting_location = State()
-
 
 async def show_activity(
     message: Message,
@@ -31,6 +32,7 @@ async def show_activity(
     user_id: int,
     state: FSMContext,
     geo_service: GeoService,
+    user_repo: UserRepository,
 ):
     """Отображение активности на спотах."""
     logger.info(f"Отображение активности для пользователя {user_id}")
@@ -62,14 +64,16 @@ async def show_activity(
                 weather_info = "🌫 Погода: нет данных"
                 if weather:
                     wind_speed = weather.get("wind_speed", "N/A")
-                    wind_direction = weather_service.wind_direction_to_text(
-                        weather.get("wind_direction", None)
+                    wind_direction_deg = weather.get("wind_direction", None)
+                    wind_direction_text = weather_service.wind_direction_to_text(
+                        wind_direction_deg
                     )
                     wind_gusts = weather.get("wind_gusts", "N/A")
                     water_temp = weather.get("water_temperature", "N/A")
+                    direction_info = f"{wind_direction_text} ({wind_direction_deg}°)" if wind_direction_deg is not None else "N/A"
                     weather_info = (
                         f"🌬 Ветер: {wind_speed} м/с\n"
-                        f"🧭 Направление: {wind_direction}\n"
+                        f"🧭 Направление: {direction_info}\n"
                         f"💨 Порывы: {wind_gusts} м/с\n"
                         f"🌊 Вода: {water_temp} °C"
                     )
@@ -77,16 +81,27 @@ async def show_activity(
                 logger.error(f"Ошибка при получении погоды для спота {spot.name}: {e}")
                 weather_info = "🌫 Погода: ошибка"
             on_spot, planning = await checkin_service.get_active_users(spot.id)
-            on_spot_info = (
-                f"🏄 На месте: {len(on_spot)} чел."
-                if on_spot
-                else "🏄 На месте: никого"
-            )
-            planning_info = (
-                f"⏳ Планируют: {len(planning)} чел."
-                if planning
-                else "⏳ Планируют: никого"
-            )
+            user_data = await user_repo.get_by_id(user_id)
+            user_tz = user_data.timezone if user_data and user_data.timezone else "UTC"
+            tz = ZoneInfo(user_tz)
+            now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+            on_spot_info = "🏄 На месте: никого"
+            if on_spot:
+                users_info = []
+                for user, checkin in on_spot:
+                    if checkin.active_until:
+                        remaining_time = (checkin.active_until.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz) - now).total_seconds() / 3600
+                        if remaining_time > 0:
+                            users_info.append(f"    • <a href=\"tg://user?id={user.id}\">{user.name}</a> (ещё {remaining_time:.1f} ч)")
+                on_spot_info = f"🏄 На месте:\n" + "\n".join(users_info) if users_info else "🏄 На месте: никого"
+            planning_info = "⏳ Планируют: никого"
+            if planning:
+                users_info = []
+                for user, checkin in planning:
+                    if checkin.planned_at:
+                        arrival_time = checkin.planned_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).strftime("%H:%M")
+                        users_info.append(f"    • <a href=\"tg://user?id={user.id}\">{user.name}</a> (в {arrival_time})")
+                planning_info = f"⏳ Планируют:\n" + "\n".join(users_info) if users_info else "⏳ Планируют: никого"
             try:
                 chat_link = await chat_service.get_chat_link(spot.name)
                 chat_info = f"💬 Чат: {chat_link}" if chat_link else "💬 Чат: не создан"
@@ -96,13 +111,13 @@ async def show_activity(
                 )
                 chat_info = "💬 Чат: ошибка"
             response = (
-                f"📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
+                f"📍 <b>{spot.name}</b> ({spot_with_distance.distance:.1f} км)\n"
                 f"{weather_info}\n"
                 f"{on_spot_info}\n"
                 f"{planning_info}\n"
                 f"{chat_info}"
             )
-            sent_message = await message.answer(response)
+            sent_message = await message.answer(response, parse_mode="HTML")
             message_ids.append((spot.id, sent_message.message_id))
         await state.update_data(activity_message_ids=message_ids)
         kb = MainKeyboards.get_activity_controls()
@@ -111,7 +126,6 @@ async def show_activity(
         logger.error(f"Ошибка в show_activity: {e}")
         await message.answer("Ошибка при отображении активности.")
 
-
 def register_activity_handlers(
     dp: Dispatcher,
     geo_service: GeoService,
@@ -119,6 +133,7 @@ def register_activity_handlers(
     checkin_service: CheckinService,
     weather_service: WeatherService,
     chat_service: ChatService,
+    user_repo: UserRepository,
 ):
     """Регистрация хендлеров для команды /activity."""
 
@@ -143,6 +158,7 @@ def register_activity_handlers(
                 user_id,
                 state,
                 geo_service,
+                user_repo,
             )
         else:
             await geo_service.request_location(message, state, user_id)
@@ -178,6 +194,7 @@ def register_activity_handlers(
                 user_id,
                 state,
                 geo_service,
+                user_repo,
             )
             await state.clear()
         else:
@@ -186,7 +203,7 @@ def register_activity_handlers(
 
     @dp.callback_query(lambda c: c.data == "refresh_all")
     async def callback_refresh_all(callback: CallbackQuery, state: FSMContext):
-        """Обработка нажатия на кнопку 'Обновить всё'."""
+        """Обработка нажатия на кнопку 'Обновить'."""
         user_id = callback.from_user.id
         logger.info(f"Обработка refresh_all от пользователя {user_id}")
         try:
@@ -230,14 +247,16 @@ def register_activity_handlers(
                     weather_info = "🌫 Погода: нет данных"
                     if weather:
                         wind_speed = weather.get("wind_speed", "N/A")
-                        wind_direction = weather_service.wind_direction_to_text(
-                            weather.get("wind_direction", None)
+                        wind_direction_deg = weather.get("wind_direction", None)
+                        wind_direction_text = weather_service.wind_direction_to_text(
+                            wind_direction_deg
                         )
                         wind_gusts = weather.get("wind_gusts", "N/A")
                         water_temp = weather.get("water_temperature", "N/A")
+                        direction_info = f"{wind_direction_text} ({wind_direction_deg}°)" if wind_direction_deg is not None else "N/A"
                         weather_info = (
                             f"🌬 Ветер: {wind_speed} м/с\n"
-                            f"🧭 Направление: {wind_direction}\n"
+                            f"🧭 Направление: {direction_info}\n"
                             f"💨 Порывы: {wind_gusts} м/с\n"
                             f"🌊 Вода: {water_temp} °C"
                         )
@@ -247,16 +266,27 @@ def register_activity_handlers(
                     )
                     weather_info = "🌫 Погода: ошибка"
                 on_spot, planning = await checkin_service.get_active_users(spot.id)
-                on_spot_info = (
-                    f"🏄 На месте: {len(on_spot)} чел."
-                    if on_spot
-                    else "🏄 На месте: никого"
-                )
-                planning_info = (
-                    f"⏳ Планируют: {len(planning)} чел."
-                    if planning
-                    else "⏳ Планируют: никого"
-                )
+                user_data = await user_repo.get_by_id(user_id)
+                user_tz = user_data.timezone if user_data and user_data.timezone else "UTC"
+                tz = ZoneInfo(user_tz)
+                now = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC")).astimezone(tz)
+                on_spot_info = "🏄 На месте: никого"
+                if on_spot:
+                    users_info = []
+                    for user, checkin in on_spot:
+                        if checkin.active_until:
+                            remaining_time = (checkin.active_until.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz) - now).total_seconds() / 3600
+                            if remaining_time > 0:
+                                users_info.append(f"    • <a href=\"tg://user?id={user.id}\">{user.name}</a> (ещё {remaining_time:.1f} ч)")
+                    on_spot_info = f"🏄 На месте:\n" + "\n".join(users_info) if users_info else "🏄 На месте: никого"
+                planning_info = "⏳ Планируют: никого"
+                if planning:
+                    users_info = []
+                    for user, checkin in planning:
+                        if checkin.planned_at:
+                            arrival_time = checkin.planned_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(tz).strftime("%H:%M")
+                            users_info.append(f"    • <a href=\"tg://user?id={user.id}\">{user.name}</a> (в {arrival_time})")
+                    planning_info = f"⏳ Планируют:\n" + "\n".join(users_info) if users_info else "⏳ Планируют: никого"
                 try:
                     chat_link = await chat_service.get_chat_link(spot.name)
                     chat_info = (
@@ -268,7 +298,7 @@ def register_activity_handlers(
                     )
                     chat_info = "💬 Чат: ошибка"
                 response = (
-                    f"📍 {spot.name} ({spot_with_distance.distance:.1f} км)\n"
+                    f"📍 <b>{spot.name}</b> ({spot_with_distance.distance:.1f} км)\n"
                     f"{weather_info}\n"
                     f"{on_spot_info}\n"
                     f"{planning_info}\n"
@@ -283,6 +313,7 @@ def register_activity_handlers(
                             text=response,
                             chat_id=callback.message.chat.id,
                             message_id=message_id,
+                            parse_mode="HTML"
                         )
                         new_message_ids.append((spot.id, message_id))
                     except Exception as e:
@@ -295,10 +326,10 @@ def register_activity_handlers(
                             logger.error(
                                 f"Ошибка при обновлении сообщения для спота {spot.id}: {e}"
                             )
-                            sent_message = await callback.message.answer(response)
+                            sent_message = await callback.message.answer(response, parse_mode="HTML")
                             new_message_ids.append((spot.id, sent_message.message_id))
                 else:
-                    sent_message = await callback.message.answer(response)
+                    sent_message = await callback.message.answer(response, parse_mode="HTML")
                     new_message_ids.append((spot.id, sent_message.message_id))
             await state.update_data(activity_message_ids=new_message_ids)
             kb = MainKeyboards.get_activity_controls()
@@ -324,7 +355,7 @@ def register_activity_handlers(
 
     @dp.callback_query(lambda c: c.data == "refresh_location")
     async def callback_refresh_location(callback: CallbackQuery, state: FSMContext):
-        """Обработка нажатия на кнопку 'Обновить геопозицию'."""
+        """Обработка нажатия на кнопку 'Уточнить геопозицию'."""
         user_id = callback.from_user.id
         logger.info(f"Обработка refresh_location от пользователя {user_id}")
         await state.clear()
