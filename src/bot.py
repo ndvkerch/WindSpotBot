@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import BotCommand, Message
 from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage  # Добавлен импорт
 from src.config.config import settings
 from src.database.init import init_db
 from src.services.geo import GeoService
@@ -22,6 +23,7 @@ from src.handlers.start import register_start_handlers
 from src.handlers.activity import register_activity_handlers
 from src.handlers.checkin import register_checkin_handlers
 from src.handlers.main_menu import register_main_menu_handlers
+from src.handlers.plans import register_plans_handlers  # Добавлен импорт
 from src.services.scheduler import SchedulerService
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import aiosqlite
@@ -32,12 +34,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
 async def main():
     """Инициализация и запуск бота."""
     logger.info("Инициализация модуля bot.py")
     bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())  # Добавлен MemoryStorage
     http_session = None
     scheduler = AsyncIOScheduler()
 
@@ -114,6 +115,7 @@ async def main():
                     )
                 return True
 
+            # Регистрация обработчиков
             register_start_handlers(dp)
             register_activity_handlers(
                 dp,
@@ -132,6 +134,7 @@ async def main():
                 user_repo=user_repo,
             )
             register_main_menu_handlers(dp)
+            register_plans_handlers(dp)
 
             @dp.message(Command(commands=["create_topic"]))
             async def cmd_create_topic(
@@ -279,7 +282,6 @@ async def main():
             await http_session.close()
         await weather_service.close()
         await bot.session.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -212,3 +212,17 @@ class CheckinRepository:
         except Exception as e:
             logger.error(f"Ошибка при обновлении чек-ина #{checkin_id}: {e}")
             return False
+
+    async def get_planned_by_user(self, user_id: int) -> List[Checkin]:
+        """Получение активных чек-инов типа 3 для пользователя."""
+        try:
+            async with self.db.execute(
+                "SELECT id, user_id, spot_id, type, duration, created_at, active_until, planned_at, active, planned_date "
+                "FROM checkins WHERE user_id = ? AND type = 3 AND active = 1",
+                (user_id,),
+            ) as cursor:
+                rows = await cursor.fetchall()
+                return [Checkin.from_row(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка при получении чек-инов типа 3 для пользователя {user_id}: {e}")
+            return []

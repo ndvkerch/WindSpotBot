@@ -421,3 +421,10 @@ class CheckinService:
                 user.id, f"😕 Ошибка при подтверждении прибытия: {str(e)}"
             )
             return False
+
+    async def get_planned_checkins_by_user(self, user_id: int) -> List[Checkin]:
+        """Получение активных запланированных чек-инов (тип 3) для пользователя."""
+        logger.info(f"Получение запланированных чек-инов для пользователя {user_id}")
+        planned_checkins = await self.checkin_repo.get_planned_by_user(user_id)
+        logger.info(f"Найдено {len(planned_checkins)} запланированных чек-инов для пользователя {user_id}")
+        return planned_checkins        
