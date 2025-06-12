@@ -1,9 +1,11 @@
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from src.services.checkin import CheckinService
 from src.models.user import User
 from src.keyboards.main import MainKeyboards
 import logging
 from datetime import datetime, timedelta, date
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +15,26 @@ class SchedulerService:
     def __init__(self, scheduler: AsyncIOScheduler, checkin_service: CheckinService):
         self.scheduler = scheduler
         self.checkin_service = checkin_service
+        # Устанавливаем часовой пояс для планировщика
+        self.scheduler.configure(timezone=ZoneInfo("Europe/Simferopol"))
 
     def start(self):
         """Запуск планировщика."""
         if not self.scheduler.running:
             self.scheduler.start()
             logger.info("Планировщик запущен")
+            self.add_checkin_expiration_job()
+            self.add_checkin_warning_job()
+            self.add_pending_checkin_notification_job()
+            self.add_delete_expired_type_2_checkins_job()
+            self.add_planned_checkin_reminder_job()
+            self.add_delete_expired_type_3_checkins_job()
 
     def add_checkin_expiration_job(self, interval_minutes: int = 5):
         """Добавление задачи для проверки истекших чек-инов."""
         async def check_expired_checkins():
             try:
+                logger.debug("Запуск проверки истекших чек-инов")
                 active_checkins = await self.checkin_service.get_all_active_checkins()
                 now = datetime.utcnow()
                 for checkin in active_checkins:
@@ -59,6 +70,7 @@ class SchedulerService:
         """Добавление задачи предупреждения о скором истечении чек-инов."""
         async def warn_expiring_checkins():
             try:
+                logger.debug("Запуск проверки чек-инов, близких к истечению")
                 now = datetime.utcnow()
                 warning_window = now + timedelta(minutes=10)
                 checkins = await self.checkin_service.checkin_repo.get_active_checkins()
@@ -89,6 +101,7 @@ class SchedulerService:
         """Добавление задачи уведомления о необходимости подтверждения чек-инов 2-го типа."""
         async def notify_pending_checkins():
             try:
+                logger.debug("Запуск проверки неподтвержденных чек-инов типа 2")
                 now = datetime.utcnow()
                 checkins = await self.checkin_service.checkin_repo.get_active_checkins()
                 for checkin in checkins:
@@ -118,6 +131,7 @@ class SchedulerService:
         """Добавление задачи удаления неподтвержденных чек-инов 2-го типа."""
         async def delete_expired_type_2_checkins():
             try:
+                logger.debug("Запуск проверки неподтвержденных чек-инов типа 2")
                 now = datetime.utcnow()
                 checkins = await self.checkin_service.checkin_repo.get_active_checkins()
                 for checkin in checkins:
@@ -145,6 +159,7 @@ class SchedulerService:
         async def send_planned_checkin_reminders():
             try:
                 current_date = date.today()
+                logger.info(f"Запуск задачи отправки напоминаний о чек-инах типа 3 на {current_date}")
                 await self.checkin_service.send_planned_checkin_reminders(current_date)
                 logger.info(f"Напоминания о чек-инах типа 3 отправлены на {current_date}")
             except Exception as e:
@@ -152,9 +167,8 @@ class SchedulerService:
 
         self.scheduler.add_job(
             send_planned_checkin_reminders,
-            'cron',
-            hour=8,
-            minute=0,
+            trigger='interval',
+            seconds=30,
             id='planned_checkin_reminders',
             replace_existing=True
         )
@@ -164,6 +178,8 @@ class SchedulerService:
         """Добавление задачи удаления истекших чек-инов типа 3 в 00:00."""
         async def delete_expired_type_3_checkins():
             try:
+                current_date = date.today()
+                logger.info(f"Запуск задачи удаления истекших чек-инов типа 3 на {current_date}")
                 deleted_count = await self.checkin_service.checkin_repo.delete_expired_type_3_checkins()
                 logger.info(f"Задача удаления истекших чек-инов типа 3 выполнена, удалено: {deleted_count}")
             except Exception as e:
@@ -171,9 +187,7 @@ class SchedulerService:
 
         self.scheduler.add_job(
             delete_expired_type_3_checkins,
-            'cron',
-            hour=0,
-            minute=0,
+            trigger=CronTrigger(hour=0, minute=0, timezone=ZoneInfo("Europe/Simferopol")),
             id='delete_expired_type_3_checkins',
             replace_existing=True
         )

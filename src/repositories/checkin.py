@@ -6,7 +6,6 @@ from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
 
-
 class CheckinRepository:
     """Репозиторий для работы с чек-инами."""
 
@@ -138,7 +137,9 @@ class CheckinRepository:
                 (current_date.isoformat(),),
             ) as cursor:
                 rows = await cursor.fetchall()
-                return [Checkin.from_row(row) for row in rows]
+                checkins = [Checkin.from_row(row) for row in rows]
+                logger.debug(f"Найдено {len(checkins)} чек-инов типа 3 на {current_date} в базе")
+                return checkins
         except Exception as e:
             logger.error(f"Ошибка при получении чек-инов типа 3 на {current_date}: {e}")
             return []
@@ -154,7 +155,9 @@ class CheckinRepository:
                 await self.db.commit()
                 deleted_count = cursor.rowcount
                 if deleted_count > 0:
-                    logger.info(f"Удалено {deleted_count} чек-инов типа 3")
+                    logger.info(f"Удалено {deleted_count} истекших чек-инов типа 3")
+                else:
+                    logger.debug(f"Не найдено истекших чек-инов типа 3 на {now}")
                 return deleted_count
         except Exception as e:
             logger.error(f"Ошибка при удалении истекших чек-инов типа 3: {e}")

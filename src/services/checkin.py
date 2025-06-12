@@ -148,8 +148,10 @@ class CheckinService:
                 planned_at = now + timedelta(hours=planned_hours)
                 active_until = planned_at + timedelta(seconds=duration)
             elif checkin_type == 3 and planned_date:
-                # active_until = конец дня planned_date (23:59:59)
-                active_until = datetime.combine(planned_date, datetime.max.time())
+                # active_until = конец дня planned_date в часовом поясе пользователя
+                user_tz = user.timezone if user.timezone else "Europe/Simferopol"
+                tz = ZoneInfo(user_tz)
+                active_until = datetime.combine(planned_date, datetime.max.time(), tzinfo=tz)
                 duration = 0  # Для типа 3 duration не используется, устанавливаем 0
 
             checkin = Checkin(
@@ -307,6 +309,7 @@ class CheckinService:
         """Отправка напоминаний для чек-инов типа 3 на текущую дату."""
         try:
             checkins = await self.checkin_repo.get_todays_planned_checkins(current_date)
+            logger.debug(f"Найдено {len(checkins)} чек-инов типа 3 на {current_date}: {[(c.id, c.spot_id, c.planned_date) for c in checkins]}")
             for checkin in checkins:
                 user = await self.user_repo.get_by_id(checkin.user_id)
                 spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
@@ -314,8 +317,7 @@ class CheckinService:
                     user_model = User(
                         id=user.id, name=user.name, username=user.username
                     )
-                    # Получаем часовой пояс пользователя
-                    user_tz = user.timezone if user.timezone else "UTC"
+                    user_tz = user.timezone if user.timezone else "Europe/Simferopol"
                     tz = ZoneInfo(user_tz)
                     local_date = current_date
                     local_datetime = datetime.combine(local_date, datetime.min.time(), tzinfo=tz)
@@ -327,7 +329,9 @@ class CheckinService:
                             checkin.id
                         ),
                     )
-                    logger.info(f"Напоминание отправлено для чек-ина #{checkin.id}")
+                    logger.info(f"Напоминание отправлено для чек-ина #{checkin.id} пользователю {user_model.id}")
+                else:
+                    logger.warning(f"Пользователь {checkin.user_id} или спот {checkin.spot_id} не найден для чек-ина #{checkin.id}")
         except Exception as e:
             logger.error(f"Ошибка при отправке напоминаний на {current_date}: {e}")
 
@@ -426,5 +430,158 @@ class CheckinService:
         """Получение активных запланированных чек-инов (тип 3) для пользователя."""
         logger.info(f"Получение запланированных чек-инов для пользователя {user_id}")
         planned_checkins = await self.checkin_repo.get_planned_by_user(user_id)
-        logger.info(f"Найдено {len(planned_checkins)} запланированных чек-инов для пользователя {user_id}")
-        return planned_checkins        
+        current_date = date.today()
+        # Фильтруем только актуальные чек-ины (planned_date >= текущая дата)
+        filtered_checkins = [
+            checkin for checkin in planned_checkins 
+            if checkin.planned_date and checkin.planned_date >= current_date
+        ]
+        # Сортировка по planned_date по возрастанию
+        sorted_checkins = sorted(
+            filtered_checkins,
+            key=lambda x: x.planned_date
+        )
+        logger.info(f"Найдено {len(sorted_checkins)} запланированных чек-инов для пользователя {user_id}")
+        logger.debug(f"Отсортированные чек-ины: {[(c.id, c.planned_date, c.spot_id) for c in sorted_checkins]}")
+        return sorted_checkins
+
+    async def convert_checkin_to_type_1(
+        self, checkin_id: int, user: User, duration: int
+    ) -> bool:
+        """Преобразование чек-ина типа 3 в тип 1."""
+        try:
+            checkin = await self.checkin_repo.get_by_id(checkin_id)
+            if not checkin or checkin.type != 3 or not checkin.active:
+                logger.warning(
+                    f"Чек-ин #{checkin_id} не найден, не типа 3 или не активен"
+                )
+                await self.bot.send_message(
+                    user.id, "😕 План не найден или уже неактивен, бро!"
+                )
+                return False
+
+            spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
+            if not spot:
+                logger.warning(f"Спот с ID {checkin.spot_id} не найден")
+                await self.bot.send_message(
+                    user.id, f"🤙 Спот с ID {checkin.spot_id} не найден, бро! 😕"
+                )
+                return False
+
+            now = datetime.utcnow()
+            async with self.checkin_repo.db.execute(
+                "UPDATE checkins SET type = ?, created_at = ?, active_until = ?, duration = ?, planned_at = ?, planned_date = ? WHERE id = ?",
+                (
+                    1,
+                    now.isoformat(),
+                    (now + timedelta(seconds=duration)).isoformat(),
+                    duration,
+                    None,
+                    None,
+                    checkin_id,
+                ),
+            ) as cursor:
+                await self.checkin_repo.db.commit()
+                if cursor.rowcount == 0:
+                    logger.warning(f"Не удалось обновить чек-ин #{checkin_id}")
+                    return False
+
+            await self.notification_service.send_checkin_notification(user, spot.name)
+            await self.notification_service.send_spot_checkin_notification(
+                user, spot.name, checkin_type=1, duration=duration
+            )
+
+            weather = await self.weather_service.get_weather(
+                spot.latitude, spot.longitude
+            )
+            wind_speed = weather.get("wind_speed", "N/A")
+            await self.bot.send_message(
+                user.id,
+                (
+                    f"✅ Йо, ты на '{spot.name}'! 🏄‍♂️\n"
+                    f"Ветер: {wind_speed} м/с. Лови волну! 💨"
+                ),
+                reply_markup=MainKeyboards.get_post_checkin_menu(checkin_id),
+            )
+
+            logger.info(
+                f"Чек-ин #{checkin_id} преобразован из типа 3 в тип 1 для пользователя {user.id}"
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                f"Ошибка при преобразовании чек-ина #{checkin_id} в тип 1: {e}"
+            )
+            await self.bot.send_message(
+                user.id, f"😕 Ошибка при подтверждении чек-ина: {str(e)}"
+            )
+            return False
+
+    async def convert_checkin_to_type_2(
+        self, checkin_id: int, user: User, planned_hours: int
+    ) -> bool:
+        """Преобразование чек-ина типа 3 в тип 2."""
+        try:
+            checkin = await self.checkin_repo.get_by_id(checkin_id)
+            if not checkin or checkin.type != 3 or not checkin.active:
+                logger.warning(
+                    f"Чек-ин #{checkin_id} не найден, не типа 3 или не активен"
+                )
+                await self.bot.send_message(
+                    user.id, "😕 План не найден или уже неактивен, бро!"
+                )
+                return False
+
+            spot = await self.spot_service.get_spot_by_id(checkin.spot_id)
+            if not spot:
+                logger.warning(f"Спот с ID {checkin.spot_id} не найден")
+                await self.bot.send_message(
+                    user.id, f"🤙 Спот с ID {checkin.spot_id} не найден, бро! 😕"
+                )
+                return False
+
+            now = datetime.utcnow()
+            duration = 3600
+            planned_at = now + timedelta(hours=planned_hours)
+            active_until = planned_at + timedelta(seconds=duration)
+            async with self.checkin_repo.db.execute(
+                "UPDATE checkins SET type = ?, created_at = ?, active_until = ?, duration = ?, planned_at = ?, planned_date = ?, planned_hours = ? WHERE id = ?",
+                (
+                    2,
+                    now.isoformat(),
+                    active_until.isoformat(),
+                    duration,
+                    planned_at.isoformat(),
+                    None,
+                    planned_hours,
+                    checkin_id,
+                ),
+            ) as cursor:
+                await self.checkin_repo.db.commit()
+                if cursor.rowcount == 0:
+                    logger.warning(f"Не удалось обновить чек-ин #{checkin_id}")
+                    return False
+
+            await self.notification_service.send_spot_checkin_notification(
+                user, spot.name, checkin_type=2, planned_hours=planned_hours
+            )
+
+            await self.bot.send_message(
+                user.id,
+                f"📅 Йо, ты запланировал тусу на '{spot.name}' через {planned_hours} ч! "
+                f"Не забудь отметить, когда будешь на месте! 🏄‍♂️",
+                reply_markup=MainKeyboards.get_confirm_arrival_menu(checkin_id),
+            )
+
+            logger.info(
+                f"Чек-ин #{checkin_id} преобразован из типа 3 в тип 2 для пользователя {user.id}"
+            )
+            return True
+        except Exception as e:
+            logger.error(
+                f"Ошибка при преобразовании чек-ина #{checkin_id} в тип 2: {e}"
+            )
+            await self.bot.send_message(
+                user.id, f"😕 Ошибка при планировании прибытия: {str(e)}"
+            )
+            return False

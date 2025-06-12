@@ -44,14 +44,7 @@ class MainKeyboards:
                             callback_data=f"cancel_checkin:{checkin.id}",
                         )
                     )
-                elif checkin.type == 3:
-                    builder.add(
-                        InlineKeyboardButton(
-                            text="❌ Отменить планы",
-                            callback_data=f"cancel_checkin:{checkin.id}",
-                        )
-                    )
-                else:  # Тип 1
+                elif checkin.type == 1:  # Тип 1
                     builder.add(
                         InlineKeyboardButton(
                             text="🚪 Покинуть спот",
@@ -276,7 +269,7 @@ class MainKeyboards:
                 callback_data="confirm_plan",
             )
         )
-        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_time"))
+        builder.add(InlineKeyboardButton(text="⬅ Назад", callback_data="back_to_date"))
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(1)
         return builder.as_markup()
@@ -322,3 +315,31 @@ class MainKeyboards:
         builder.add(InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu"))
         builder.adjust(2)
         return builder.as_markup()
+
+    @staticmethod
+    def get_empty_plans_menu() -> InlineKeyboardMarkup:
+        """Клавиатура для пустого списка планов."""
+        logger.info("Создание клавиатуры для пустого списка планов")
+        kb = InlineKeyboardBuilder()
+        kb.button(text="🔄 Обновить", callback_data="refresh_plan")
+        kb.button(text="↩️ В главное меню", callback_data="main_menu")
+        kb.adjust(2)
+        kb_markup = kb.as_markup()
+        logger.debug(f"Клавиатура пустого списка планов: {kb_markup.inline_keyboard}")
+        return kb_markup
+
+    @staticmethod
+    def get_plans_menu(checkin_ids: list[int]) -> InlineKeyboardMarkup:
+        """Клавиатура для списка запланированных чек-инов."""
+        logger.info(f"Создание клавиатуры для списка планов с {len(checkin_ids)} чек-инами")
+        kb = InlineKeyboardBuilder()
+        for i, checkin_id in enumerate(checkin_ids, 1):
+            kb.button(text=f"❌ Отменить план {i}", callback_data=f"cancel_plan:{checkin_id}")
+        kb.button(text="🔄 Обновить", callback_data="refresh_plan")
+        kb.button(text="↩️ В главное меню", callback_data="main_menu")
+        # Явно задаём компоновку: по 1 кнопке для отмены, затем 2 кнопки для управления
+        adjust_values = [1] * len(checkin_ids) + [2]
+        kb.adjust(*adjust_values)
+        kb_markup = kb.as_markup()
+        logger.debug(f"Клавиатура списка планов: {kb_markup.inline_keyboard}")
+        return kb_markup

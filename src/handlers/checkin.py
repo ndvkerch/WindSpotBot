@@ -261,6 +261,7 @@ def register_checkin_handlers(
             data = await state.get_data()
             spot_id = data.get("spot_id")
             checkin_type = data.get("checkin_type")
+            original_checkin_id = data.get("original_checkin_id")  # Для напоминаний
             if not spot_id or not checkin_type:
                 await callback.message.edit_text("😕 Ошибка: данные не найдены, бро!")
                 await state.clear()
@@ -272,12 +273,22 @@ def register_checkin_handlers(
                 name=callback.from_user.full_name,
                 username=callback.from_user.username,
             )
-            success = await checkin_service.create_checkin(
-                user, spot_id, checkin_type, duration=duration_seconds
-            )
+            if original_checkin_id:
+                # Преобразование чек-ина типа 3 в тип 1
+                success = await checkin_service.convert_checkin_to_type_1(
+                    original_checkin_id, user, duration_seconds
+                )
+                logger.info(f"Чек-ин #{original_checkin_id} преобразован в тип 1 для пользователя {user_id}")
+            else:
+                # Стандартный процесс создания чек-ина
+                success = await checkin_service.create_checkin(
+                    user, spot_id, checkin_type, duration=duration_seconds
+                )
             if success:
+                checkin = (await checkin_service.checkin_repo.get_by_user(user_id))[-1]
                 await callback.message.edit_text(
-                    f"✅ Чек-ин на '{data.get('spot_name')}' на {duration_hours} ч создан, бро! 🏄‍♂️"
+                    f"✅ Чек-ин на '{data.get('spot_name')}' на {duration_hours} ч создан, бро! 🏄‍♂️",
+                    reply_markup=MainKeyboards.get_post_checkin_menu(checkin.id)
                 )
             else:
                 await callback.message.edit_text(
@@ -304,6 +315,7 @@ def register_checkin_handlers(
             data = await state.get_data()
             spot_id = data.get("spot_id")
             checkin_type = data.get("checkin_type")
+            original_checkin_id = data.get("original_checkin_id")  # Для напоминаний
             if not spot_id or checkin_type != 2:
                 await callback.message.edit_text("😕 Ошибка: данные не найдены, бро!")
                 await state.clear()
@@ -314,12 +326,22 @@ def register_checkin_handlers(
                 name=callback.from_user.full_name,
                 username=callback.from_user.username,
             )
-            success = await checkin_service.create_checkin(
-                user, spot_id, checkin_type, duration=3600, planned_hours=planned_hours
-            )
+            if original_checkin_id:
+                # Преобразование чек-ина типа 3 в тип 2
+                success = await checkin_service.convert_checkin_to_type_2(
+                    original_checkin_id, user, planned_hours
+                )
+                logger.info(f"Чек-ин #{original_checkin_id} преобразован в тип 2 для пользователя {user_id}")
+            else:
+                # Стандартный процесс создания чек-ина
+                success = await checkin_service.create_checkin(
+                    user, spot_id, checkin_type, duration=3600, planned_hours=planned_hours
+                )
             if success:
+                checkin = (await checkin_service.checkin_repo.get_by_user(user_id))[-1]
                 await callback.message.edit_text(
-                    f"📅 План прибытия на '{data.get('spot_name')}' через {planned_hours} ч записан, бро! 🏄‍♂️"
+                    f"📅 План прибытия на '{data.get('spot_name')}' через {planned_hours} ч записан, бро! 🏄‍♂️",
+                    reply_markup=MainKeyboards.get_confirm_arrival_menu(checkin.id)
                 )
             else:
                 await callback.message.edit_text(
@@ -547,7 +569,7 @@ def register_checkin_handlers(
                     reply_markup=kb,
                 )
                 await state.update_data(
-                    checkin_type=1, spot_id=spot.id, spot_name=spot.name
+                    checkin_type=1, spot_id=spot.id, spot_name=spot.name, original_checkin_id=checkin_id
                 )
                 await state.set_state(CheckinStates.selecting_duration)
             elif action == "type2":
@@ -557,7 +579,7 @@ def register_checkin_handlers(
                     reply_markup=kb,
                 )
                 await state.update_data(
-                    checkin_type=2, spot_id=spot.id, spot_name=spot.name
+                    checkin_type=2, spot_id=spot.id, spot_name=spot.name, original_checkin_id=checkin_id
                 )
                 await state.set_state(CheckinStates.selecting_planned_time)
             elif action == "cancel":
@@ -570,7 +592,7 @@ def register_checkin_handlers(
                     await callback.message.edit_text(
                         f"😕 Не удалось отменить планы на '{spot.name}', бро!"
                     )
-            await state.clear()
+                await state.clear()
             await callback.answer()
         except Exception as e:
             logger.error(f"Ошибка в callback_planned_action: {e}")

@@ -1,11 +1,12 @@
 import logging
 from aiogram import Dispatcher
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.fsm.context import FSMContext
 from src.services.checkin import CheckinService
 from src.repositories.user import UserRepository
 from src.keyboards.main import MainKeyboards
 from src.models.user import User
+from time import time
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ def register_plans_handlers(dp: Dispatcher):
     """Регистрация обработчиков для управления запланированными чек-инами."""
     logger.info("Регистрация обработчиков plans.py")
 
-    @dp.callback_query(lambda c: c.data in ["plan", "refresh_plan"])
+    @dp.callback_query(lambda c: c.data in ["plan", "refresh_plan"] or c.data.startswith("refresh_plan:"))
     async def callback_plan(callback: CallbackQuery, state: FSMContext, checkin_service: CheckinService, user_repo: UserRepository):
         """Обработка нажатия кнопки 'Планирование' или 'Обновить'."""
         user_id = callback.from_user.id
@@ -25,31 +26,27 @@ def register_plans_handlers(dp: Dispatcher):
         logger.info(f"Найдено {len(planned_checkins)} планов для пользователя {user_id}")
 
         # Формируем сообщение и клавиатуру
-        kb = InlineKeyboardMarkup(inline_keyboard=[])
-        message = "📅 Твои планы:\n" if planned_checkins else "📅 Пока планов нет, бро! 😕\nСоздай новый через /checkin! 🏄‍♂️"
-
-        if planned_checkins:
+        timestamp = int(time())  # Уникальный идентификатор для кнопки "Обновить"
+        if not planned_checkins:
+            message = "📅 Пока планов нет, бро! 😕\nСоздай новый через /checkin! 🏄‍♂️"
+            kb = MainKeyboards.get_empty_plans_menu()
+            # Обновляем callback_data кнопки "Обновить" с временной меткой
+            kb.inline_keyboard[0][0].callback_data = f"refresh_plan:{timestamp}"
+        else:
+            message = "📅 Твои планы:\n"
             for i, checkin in enumerate(planned_checkins, 1):
                 spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
                 if not spot:
                     logger.error(f"Спот с ID {checkin.spot_id} не найден для чек-ина {checkin.id}")
                     continue
                 date_str = checkin.planned_date.strftime("%d.%m.%Y") if checkin.planned_date else "Не указана"
-                message += f"{i}. {spot.name}, {date_str}\n"
-                kb.inline_keyboard.append([
-                    InlineKeyboardButton(
-                        text=f"❌ Отменить план {i}",
-                        callback_data=f"cancel_checkin:{checkin.id}"
-                    )
-                ])
-
-        # Добавляем кнопки "Обновить" и "В главное меню"
-        kb.inline_keyboard.append([
-            InlineKeyboardButton(text="🔄 Обновить", callback_data="refresh_plan")
-        ])
-        kb.inline_keyboard.append([
-            InlineKeyboardButton(text="🏠 В главное меню", callback_data="main_menu")
-        ])
+                message += f"{i}. {date_str}, {spot.name}\n"
+            kb = MainKeyboards.get_plans_menu([checkin.id for checkin in planned_checkins])
+            # Обновляем callback_data кнопки "Обновить" с временной меткой
+            for row in kb.inline_keyboard:
+                for button in row:
+                    if button.text == "🔄 Обновить":
+                        button.callback_data = f"refresh_plan:{timestamp}"
 
         # Проверяем, изменилось ли сообщение
         current_text = callback.message.text or ""
@@ -69,9 +66,9 @@ def register_plans_handlers(dp: Dispatcher):
 
         await callback.answer()
 
-    @dp.callback_query(lambda c: c.data and c.data.startswith("cancel_checkin:"))
-    async def callback_cancel_checkin(callback: CallbackQuery, state: FSMContext, checkin_service: CheckinService):
-        """Обработка кнопки 'Отменить план'."""
+    @dp.callback_query(lambda c: c.data and c.data.startswith("cancel_plan:"))
+    async def callback_cancel_plan(callback: CallbackQuery, state: FSMContext, checkin_service: CheckinService, user_repo: UserRepository):
+        """Обработка кнопки 'Отменить план' в меню планирования."""
         user_id = callback.from_user.id
         logger.info(f"Нажата кнопка 'Отменить план': {callback.data} от пользователя {user_id}")
         try:
@@ -99,11 +96,43 @@ def register_plans_handlers(dp: Dispatcher):
                 await checkin_service.notification_service.send_spot_checkout_notification(
                     user, spot.name, checkin.type
                 )
+                # Показываем сообщение об отмене
                 await callback.message.edit_text(
                     f"❌ Планы на '{spot.name}' отменены, бро! 😎",
-                    reply_markup=await MainKeyboards.get_main_menu(user_id, checkin_service.checkin_repo)
+                    reply_markup=None  # Временно убираем клавиатуру
                 )
                 logger.info(f"Чек-ин #{checkin_id} успешно отменён для пользователя {user_id}")
+                # Обновляем меню планирования
+                planned_checkins = await checkin_service.get_planned_checkins_by_user(user_id)
+                logger.info(f"Найдено {len(planned_checkins)} планов после отмены для пользователя {user_id}")
+                timestamp = int(time())  # Уникальный идентификатор для кнопки "Обновить"
+                if not planned_checkins:
+                    message = "📅 Пока планов нет, бро! 😕\nСоздай новый через /checkin! 🏄‍♂️"
+                    kb = MainKeyboards.get_empty_plans_menu()
+                    kb.inline_keyboard[0][0].callback_data = f"refresh_plan:{timestamp}"
+                else:
+                    message = "📅 Твои планы:\n"
+                    for i, checkin in enumerate(planned_checkins, 1):
+                        spot = await checkin_service.spot_service.get_spot_by_id(checkin.spot_id)
+                        if not spot:
+                            logger.error(f"Спот с ID {checkin.spot_id} не найден для чек-ина {checkin.id}")
+                            continue
+                        date_str = checkin.planned_date.strftime("%d.%m.%Y") if checkin.planned_date else "Не указана"
+                        message += f"{i}. {date_str}, {spot.name}\n"
+                    kb = MainKeyboards.get_plans_menu([checkin.id for checkin in planned_checkins])
+                    for row in kb.inline_keyboard:
+                        for button in row:
+                            if button.text == "🔄 Обновить":
+                                button.callback_data = f"refresh_plan:{timestamp}"
+                try:
+                    await callback.message.edit_text(message, reply_markup=kb, parse_mode="HTML")
+                    logger.info(f"Меню планирования обновлено для пользователя {user_id}")
+                except Exception as e:
+                    logger.error(f"Ошибка при обновлении меню планирования: {e}")
+                    await callback.message.answer(
+                        "😕 Не удалось обновить планы, попробуй ещё раз!",
+                        reply_markup=kb
+                    )
             else:
                 await callback.message.edit_text(
                     f"😕 Не удалось отменить планы на '{spot.name}', бро!"
@@ -112,6 +141,6 @@ def register_plans_handlers(dp: Dispatcher):
             await state.clear()
             await callback.answer()
         except Exception as e:
-            logger.error(f"Ошибка в callback_cancel_checkin для чек-ин #{checkin_id}: {e}", exc_info=True)
+            logger.error(f"Ошибка в callback_cancel_plan для чек-ин #{checkin_id}: {e}", exc_info=True)
             await callback.message.edit_text(f"😕 Ошибка при отмене плана: {str(e)}")
             await state.clear()
